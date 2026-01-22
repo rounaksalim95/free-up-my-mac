@@ -6,13 +6,21 @@ A native macOS application that helps users find and remove duplicate files to f
 
 ## Project Status
 
-- [ ] Phase 1: Project Setup & Core Architecture
-- [ ] Phase 2: File Scanning Engine
-- [ ] Phase 3: User Interface
+- [x] Phase 1: Project Setup & Core Architecture ✅
+- [x] Phase 2: File Scanning Engine ✅
+- [ ] Phase 3: User Interface  ← CURRENT
 - [ ] Phase 4: Duplicate Detection Algorithm
 - [ ] Phase 5: File Management & Deletion
 - [ ] Phase 6: History & Sharing Features
 - [ ] Phase 7: Polish & Testing
+
+## Development Approach
+
+This project follows **Test-Driven Development (TDD)**:
+1. Write failing tests first
+2. Implement minimum code to pass tests
+3. Refactor while keeping tests green
+4. Repeat for each feature
 
 ---
 

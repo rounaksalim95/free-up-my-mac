@@ -7,7 +7,7 @@ struct FileFilters: Sendable {
     var excludedExtensions: Set<String>
     var excludedDirectoryNames: Set<String>
 
-    init(
+    nonisolated init(
         minimumFileSize: Int64 = 1024,
         excludeHiddenFiles: Bool = true,
         excludeSystemDirectories: Bool = true,
@@ -21,9 +21,9 @@ struct FileFilters: Sendable {
         self.excludedDirectoryNames = excludedDirectoryNames
     }
 
-    static let `default` = FileFilters()
+    nonisolated static let `default` = FileFilters()
 
-    static let systemDirectories: Set<String> = [
+    nonisolated static let systemDirectories: Set<String> = [
         ".Trash",
         ".Spotlight-V100",
         ".fseventsd",
@@ -35,13 +35,13 @@ struct FileFilters: Sendable {
         ".DS_Store"
     ]
 
-    static let systemPaths: Set<String> = [
+    nonisolated static let systemPaths: Set<String> = [
         "/Library",
         "/System",
         "/Applications"
     ]
 
-    func shouldIncludeFile(at url: URL, size: Int64) -> Bool {
+    nonisolated func shouldIncludeFile(at url: URL, size: Int64) -> Bool {
         if size < minimumFileSize {
             return false
         }
@@ -60,7 +60,7 @@ struct FileFilters: Sendable {
         return true
     }
 
-    func shouldTraverseDirectory(at url: URL) -> Bool {
+    nonisolated func shouldTraverseDirectory(at url: URL) -> Bool {
         let dirName = url.lastPathComponent
 
         if excludeHiddenFiles && dirName.hasPrefix(".") {

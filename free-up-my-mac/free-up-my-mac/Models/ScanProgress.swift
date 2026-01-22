@@ -22,7 +22,7 @@ struct ScanProgress: Sendable {
     var startTime: Date?
     var error: String?
 
-    init(
+    nonisolated init(
         phase: ScanPhase = .idle,
         totalFiles: Int = 0,
         processedFiles: Int = 0,

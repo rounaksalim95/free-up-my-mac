@@ -9,7 +9,7 @@ struct ScannedFile: Identifiable, Hashable, Sendable {
     var partialHash: String?
     var fullHash: String?
 
-    init(
+    nonisolated init(
         id: UUID = UUID(),
         url: URL,
         size: Int64,
