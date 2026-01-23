@@ -37,12 +37,17 @@ final class ScanViewModel {
     // MARK: - Services
 
     private var scannerService: FileScannerService
+    private var duplicateDetectorService: DuplicateDetectorService
     private var scanTask: Task<Void, Never>?
 
     // MARK: - Initialization
 
-    init(scannerService: FileScannerService = FileScannerService()) {
+    init(
+        scannerService: FileScannerService = FileScannerService(),
+        duplicateDetectorService: DuplicateDetectorService = DuplicateDetectorService()
+    ) {
         self.scannerService = scannerService
+        self.duplicateDetectorService = duplicateDetectorService
     }
 
     // MARK: - Computed Properties
@@ -131,7 +136,9 @@ final class ScanViewModel {
         appState = .scanning
         scanProgress = ScanProgress(phase: .enumerating, startTime: Date())
 
-        // Create new scanner service for this scan
+        // Create new services for this scan to ensure fresh cancellation state.
+        // Note: This replaces any services injected at init, which is intentional for production use.
+        // For testing, consider testing the services directly rather than through the ViewModel.
         scannerService = FileScannerService()
 
         do {
@@ -148,17 +155,17 @@ final class ScanViewModel {
 
             scannedFiles = allFiles
 
-            // Generate mock duplicates from scanned files
-            duplicateGroups = MockDataProvider.generateMockDuplicates(from: allFiles)
+            // Create a new detector service for this scan
+            duplicateDetectorService = DuplicateDetectorService()
 
-            scanProgress = ScanProgress(
-                phase: .completed,
-                totalFiles: allFiles.count,
-                processedFiles: allFiles.count,
-                bytesProcessed: allFiles.reduce(0) { $0 + $1.size },
-                totalBytes: allFiles.reduce(0) { $0 + $1.size },
-                startTime: scanProgress.startTime
-            )
+            // Find duplicates using real content-based detection
+            duplicateGroups = try await duplicateDetectorService.findDuplicates(
+                in: allFiles
+            ) { [weak self] progress in
+                Task { @MainActor in
+                    self?.scanProgress = progress
+                }
+            }
 
             appState = .results
 
@@ -174,6 +181,18 @@ final class ScanViewModel {
                 appState = .error("Access denied: \(url.path)")
                 scanProgress = ScanProgress(phase: .failed, error: "Access denied")
             }
+        } catch let error as HashError {
+            switch error {
+            case .cancelled:
+                appState = .idle
+                scanProgress = ScanProgress(phase: .cancelled)
+            case .fileNotFound(let url):
+                appState = .error("File not found: \(url.path)")
+                scanProgress = ScanProgress(phase: .failed, error: "File not found")
+            case .readError(let url, let message):
+                appState = .error("Error reading \(url.lastPathComponent): \(message)")
+                scanProgress = ScanProgress(phase: .failed, error: "Read error")
+            }
         } catch {
             appState = .error(error.localizedDescription)
             scanProgress = ScanProgress(phase: .failed, error: error.localizedDescription)
@@ -183,6 +202,7 @@ final class ScanViewModel {
     func cancelScan() {
         Task {
             await scannerService.cancelScan()
+            await duplicateDetectorService.cancel()
         }
         appState = .idle
         scanProgress = ScanProgress(phase: .cancelled)

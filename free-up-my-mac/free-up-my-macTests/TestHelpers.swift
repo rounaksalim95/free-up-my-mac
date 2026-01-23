@@ -56,6 +56,51 @@ struct TestDirectory {
     }
 }
 
+/// Extension for creating duplicate test fixtures
+extension TestDirectory {
+    /// Create multiple files with identical content (true duplicates)
+    @discardableResult
+    func addDuplicateFiles(names: [String], size: Int, content: Data? = nil) throws -> [URL] {
+        let data: Data
+        if let providedContent = content {
+            data = providedContent
+        } else {
+            // Generate random content to ensure unique hashes across different duplicate groups
+            var randomData = Data(count: size)
+            randomData.withUnsafeMutableBytes { ptr in
+                guard let baseAddress = ptr.baseAddress else { return }
+                for i in 0..<size {
+                    baseAddress.storeBytes(of: UInt8.random(in: 0...255), toByteOffset: i, as: UInt8.self)
+                }
+            }
+            data = randomData
+        }
+
+        var urls: [URL] = []
+        for name in names {
+            let fileURL = url.appendingPathComponent(name)
+            try data.write(to: fileURL)
+            urls.append(fileURL)
+        }
+        return urls
+    }
+
+    /// Create files with same size but different content (false positives for size-based grouping)
+    @discardableResult
+    func addSameSizeDifferentContent(names: [String], size: Int) throws -> [URL] {
+        var urls: [URL] = []
+        for (index, name) in names.enumerated() {
+            let fileURL = url.appendingPathComponent(name)
+            // Fill with different bytes based on index to ensure different hashes
+            let fillByte = UInt8((index + 1) % 256)
+            let data = Data(repeating: fillByte, count: size)
+            try data.write(to: fileURL)
+            urls.append(fileURL)
+        }
+        return urls
+    }
+}
+
 /// Extension to create a test directory structure matching the plan
 extension TestDirectory {
     /// Creates a standard test structure:
