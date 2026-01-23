@@ -53,23 +53,24 @@ actor DuplicateDetectorService {
             return []
         }
 
-        // Separate small files from large files
-        var smallFiles: [ScannedFile] = []
-        var largeFiles: [ScannedFile] = []
+        // Separate small file groups from large file groups (preserving group structure)
+        var smallFileGroups: [[ScannedFile]] = []
+        var largeFileGroups: [[ScannedFile]] = []
 
         for group in sizeGroups {
-            for file in group {
-                if file.size < smallFileThreshold {
-                    smallFiles.append(file)
-                } else {
-                    largeFiles.append(file)
-                }
+            // All files in a group have the same size, so check the first one
+            if let firstFile = group.first, firstFile.size <= smallFileThreshold {
+                smallFileGroups.append(group)
+            } else {
+                largeFileGroups.append(group)
             }
         }
 
         // Stage 2: Compute partial hashes for large files only
-        var partialHashedLargeFiles: [ScannedFile] = []
-        if !largeFiles.isEmpty {
+        var partialHashedLargeGroups: [[ScannedFile]] = []
+        if !largeFileGroups.isEmpty {
+            let largeFiles = largeFileGroups.flatMap { $0 }
+
             progress(ScanProgress(
                 phase: .computingPartialHashes,
                 totalFiles: largeFiles.count,
@@ -79,7 +80,7 @@ actor DuplicateDetectorService {
 
             if isCancelled { throw HashError.cancelled }
 
-            partialHashedLargeFiles = try await hasherService.computePartialHashes(for: largeFiles) { processed, total in
+            let partialHashedFiles = try await hasherService.computePartialHashes(for: largeFiles) { processed, total in
                 progress(ScanProgress(
                     phase: .computingPartialHashes,
                     totalFiles: total,
@@ -87,14 +88,17 @@ actor DuplicateDetectorService {
                     startTime: startTime
                 ))
             }
+
+            // Rebuild groups from hashed files (some files may have been skipped due to errors)
+            partialHashedLargeGroups = rebuildSizeGroups(from: partialHashedFiles)
         }
 
-        // Filter large files using partial hash
-        let largeFileGroups = groupBySize(partialHashedLargeFiles)
-        let filteredLargeGroups = filterPotentialDuplicates(largeFileGroups)
+        // Filter large files using partial hash (no need to re-group by size, already grouped)
+        let filteredLargeGroups = filterPotentialDuplicates(partialHashedLargeGroups)
         let filteredLargeFiles = filteredLargeGroups.flatMap { $0 }
 
         // Stage 3: Compute full hashes for filtered large files + all small files
+        let smallFiles = smallFileGroups.flatMap { $0 }
         let filesToFullHash = filteredLargeFiles + smallFiles
 
         if isCancelled { throw HashError.cancelled }
@@ -179,8 +183,21 @@ actor DuplicateDetectorService {
         return result
     }
 
-    // MARK: - Stage 4: Build Duplicate Groups
+    // MARK: - Private Helpers
 
+    /// Rebuilds size groups from a flat array of files (used after hashing when some files may have been skipped)
+    private func rebuildSizeGroups(from files: [ScannedFile]) -> [[ScannedFile]] {
+        var sizeDict: [Int64: [ScannedFile]] = [:]
+
+        for file in files {
+            sizeDict[file.size, default: []].append(file)
+        }
+
+        // Filter to keep only groups with 2+ files
+        return sizeDict.values.filter { $0.count >= 2 }
+    }
+
+    /// Build final duplicate groups from files with full hashes
     private func buildDuplicateGroups(from files: [ScannedFile]) -> [DuplicateGroup] {
         // Group by size + full hash
         var hashDict: [String: [ScannedFile]] = [:]

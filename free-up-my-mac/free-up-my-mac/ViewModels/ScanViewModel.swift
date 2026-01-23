@@ -136,7 +136,9 @@ final class ScanViewModel {
         appState = .scanning
         scanProgress = ScanProgress(phase: .enumerating, startTime: Date())
 
-        // Create new scanner service for this scan
+        // Create new services for this scan to ensure fresh cancellation state.
+        // Note: This replaces any services injected at init, which is intentional for production use.
+        // For testing, consider testing the services directly rather than through the ViewModel.
         scannerService = FileScannerService()
 
         do {

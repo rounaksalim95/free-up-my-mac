@@ -36,16 +36,140 @@ actor FileHasherService {
         isCancelled = false
     }
 
+    func checkCancelled() throws {
+        if isCancelled { throw HashError.cancelled }
+    }
+
     // MARK: - Single File Hashing
 
     func computePartialHash(for file: ScannedFile) async throws -> String {
-        if isCancelled { throw HashError.cancelled }
+        try checkCancelled()
 
         // For small files, delegate to full hash
         if file.size <= smallFileThreshold {
             return try await computeFullHash(for: file)
         }
 
+        // Perform I/O work outside actor isolation for true parallelism
+        return try Self.computePartialHashSync(
+            for: file,
+            partialHashSize: partialHashSize
+        )
+    }
+
+    func computeFullHash(for file: ScannedFile) async throws -> String {
+        try checkCancelled()
+
+        // Perform I/O work outside actor isolation for true parallelism
+        return try Self.computeFullHashSync(
+            for: file,
+            chunkSize: chunkSize
+        )
+    }
+
+    // MARK: - Batch Hashing
+
+    func computePartialHashes(
+        for files: [ScannedFile],
+        progress: @escaping @Sendable (Int, Int) -> Void
+    ) async throws -> [ScannedFile] {
+        if files.isEmpty { return [] }
+
+        let partialSize = partialHashSize
+        let threshold = smallFileThreshold
+        let chunk = chunkSize
+
+        return try await processBatch(files: files, progress: progress) { file in
+            var updatedFile = file
+            if file.size <= threshold {
+                updatedFile.partialHash = try Self.computeFullHashSync(for: file, chunkSize: chunk)
+            } else {
+                updatedFile.partialHash = try Self.computePartialHashSync(for: file, partialHashSize: partialSize)
+            }
+            return updatedFile
+        }
+    }
+
+    func computeFullHashes(
+        for files: [ScannedFile],
+        progress: @escaping @Sendable (Int, Int) -> Void
+    ) async throws -> [ScannedFile] {
+        if files.isEmpty { return [] }
+
+        let chunk = chunkSize
+
+        return try await processBatch(files: files, progress: progress) { file in
+            var updatedFile = file
+            updatedFile.fullHash = try Self.computeFullHashSync(for: file, chunkSize: chunk)
+            return updatedFile
+        }
+    }
+
+    // MARK: - Private Helpers
+
+    private func processBatch(
+        files: [ScannedFile],
+        progress: @escaping @Sendable (Int, Int) -> Void,
+        transform: @escaping @Sendable (ScannedFile) throws -> ScannedFile
+    ) async throws -> [ScannedFile] {
+        let total = files.count
+        var processedCount = 0
+        var results: [ScannedFile] = []
+        results.reserveCapacity(total)
+
+        // Process in chunks to limit concurrency
+        let chunks = stride(from: 0, to: files.count, by: maxConcurrentOperations).map {
+            Array(files[$0..<min($0 + maxConcurrentOperations, files.count)])
+        }
+
+        for chunk in chunks {
+            try checkCancelled()
+
+            // Process chunk concurrently using throwing task group
+            let chunkResults = try await withThrowingTaskGroup(of: ScannedFile?.self) { group in
+                for file in chunk {
+                    group.addTask {
+                        do {
+                            return try transform(file)
+                        } catch let error as HashError where error != .cancelled {
+                            // Skip files that fail due to permission/read errors
+                            return nil
+                        }
+                        // HashError.cancelled and other errors propagate up
+                    }
+                }
+
+                var chunkFiles: [ScannedFile] = []
+                for try await result in group {
+                    if let file = result {
+                        chunkFiles.append(file)
+                    }
+                }
+                return chunkFiles
+            }
+
+            results.append(contentsOf: chunkResults)
+            processedCount += chunk.count
+
+            // Report progress
+            progress(processedCount, total)
+
+            // Yield for UI responsiveness (every 50 files)
+            if processedCount % 50 == 0 {
+                await Task.yield()
+            }
+        }
+
+        return results
+    }
+
+    // MARK: - Nonisolated Static Helpers (for true parallel execution)
+
+    /// Computes partial hash synchronously - can run in parallel across multiple tasks
+    private nonisolated static func computePartialHashSync(
+        for file: ScannedFile,
+        partialHashSize: Int
+    ) throws -> String {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: file.url.path) else {
             throw HashError.fileNotFound(file.url)
@@ -80,9 +204,11 @@ actor FileHasherService {
         }
     }
 
-    func computeFullHash(for file: ScannedFile) async throws -> String {
-        if isCancelled { throw HashError.cancelled }
-
+    /// Computes full hash synchronously - can run in parallel across multiple tasks
+    private nonisolated static func computeFullHashSync(
+        for file: ScannedFile,
+        chunkSize: Int
+    ) throws -> String {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: file.url.path) else {
             throw HashError.fileNotFound(file.url)
@@ -98,8 +224,6 @@ actor FileHasherService {
             var hasher = XXH64()
 
             while true {
-                if isCancelled { throw HashError.cancelled }
-
                 let chunk = try handle.read(upToCount: chunkSize)
                 guard let data = chunk, !data.isEmpty else { break }
                 hasher.update(data)
@@ -113,90 +237,5 @@ actor FileHasherService {
         } catch {
             throw HashError.readError(file.url, error.localizedDescription)
         }
-    }
-
-    // MARK: - Batch Hashing
-
-    func computePartialHashes(
-        for files: [ScannedFile],
-        progress: @escaping @Sendable (Int, Int) -> Void
-    ) async throws -> [ScannedFile] {
-        if files.isEmpty { return [] }
-
-        return try await processBatch(files: files, progress: progress) { file in
-            var updatedFile = file
-            updatedFile.partialHash = try await self.computePartialHash(for: file)
-            return updatedFile
-        }
-    }
-
-    func computeFullHashes(
-        for files: [ScannedFile],
-        progress: @escaping @Sendable (Int, Int) -> Void
-    ) async throws -> [ScannedFile] {
-        if files.isEmpty { return [] }
-
-        return try await processBatch(files: files, progress: progress) { file in
-            var updatedFile = file
-            updatedFile.fullHash = try await self.computeFullHash(for: file)
-            return updatedFile
-        }
-    }
-
-    // MARK: - Private Helpers
-
-    private func processBatch(
-        files: [ScannedFile],
-        progress: @escaping @Sendable (Int, Int) -> Void,
-        transform: @escaping (ScannedFile) async throws -> ScannedFile
-    ) async throws -> [ScannedFile] {
-        let total = files.count
-        var processedCount = 0
-        var results: [ScannedFile] = []
-        results.reserveCapacity(total)
-
-        // Process in chunks to limit concurrency
-        let chunks = stride(from: 0, to: files.count, by: maxConcurrentOperations).map {
-            Array(files[$0..<min($0 + maxConcurrentOperations, files.count)])
-        }
-
-        for chunk in chunks {
-            if isCancelled { throw HashError.cancelled }
-
-            // Process chunk concurrently
-            let chunkResults = await withTaskGroup(of: ScannedFile?.self) { group in
-                for file in chunk {
-                    group.addTask {
-                        do {
-                            return try await transform(file)
-                        } catch {
-                            // Skip files that fail (permission errors, etc.)
-                            return nil
-                        }
-                    }
-                }
-
-                var chunkFiles: [ScannedFile] = []
-                for await result in group {
-                    if let file = result {
-                        chunkFiles.append(file)
-                    }
-                }
-                return chunkFiles
-            }
-
-            results.append(contentsOf: chunkResults)
-            processedCount += chunk.count
-
-            // Report progress
-            progress(processedCount, total)
-
-            // Yield for UI responsiveness (every 50 files)
-            if processedCount % 50 == 0 {
-                await Task.yield()
-            }
-        }
-
-        return results
     }
 }
