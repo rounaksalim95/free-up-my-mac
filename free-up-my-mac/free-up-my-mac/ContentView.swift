@@ -7,15 +7,41 @@
 
 import SwiftUI
 
+/// Root view with state-driven navigation between app screens
 struct ContentView: View {
+    @State private var viewModel = ScanViewModel()
+    @State private var showingHistory = false
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        Group {
+            switch viewModel.appState {
+            case .idle:
+                MainView(viewModel: viewModel)
+
+            case .scanning:
+                ScanProgressView(viewModel: viewModel)
+
+            case .results:
+                ResultsView(viewModel: viewModel)
+
+            case .error(let message):
+                ErrorView(message: message, viewModel: viewModel)
+            }
         }
-        .padding()
+        .frame(minWidth: 800, minHeight: 600)
+        .sheet(isPresented: $showingHistory) {
+            HistoryView()
+        }
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    showingHistory = true
+                } label: {
+                    Label("History", systemImage: "clock.arrow.circlepath")
+                }
+                .help("View cleanup history")
+            }
+        }
     }
 }
 
