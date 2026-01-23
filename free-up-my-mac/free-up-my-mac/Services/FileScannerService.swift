@@ -46,6 +46,7 @@ actor FileScannerService {
 
         var scannedFiles: [ScannedFile] = []
         var processedCount = 0
+        var totalBytesProcessed: Int64 = 0
         let startTime = Date()
 
         // Report initial progress
@@ -122,6 +123,7 @@ actor FileScannerService {
 
                 scannedFiles.append(scannedFile)
                 processedCount += 1
+                totalBytesProcessed += fileSize
 
                 // Report progress periodically
                 if processedCount % progressBatchSize == 0 {
@@ -130,7 +132,7 @@ actor FileScannerService {
                         totalFiles: processedCount,
                         processedFiles: processedCount,
                         currentFile: fileURL.path,
-                        bytesProcessed: scannedFiles.reduce(0) { $0 + $1.size },
+                        bytesProcessed: totalBytesProcessed,
                         startTime: startTime
                     ))
                 }
@@ -143,13 +145,12 @@ actor FileScannerService {
         }
 
         // Report final progress
-        let totalBytes = scannedFiles.reduce(0) { $0 + $1.size }
         progress(ScanProgress(
             phase: .completed,
             totalFiles: scannedFiles.count,
             processedFiles: scannedFiles.count,
-            bytesProcessed: totalBytes,
-            totalBytes: totalBytes,
+            bytesProcessed: totalBytesProcessed,
+            totalBytes: totalBytesProcessed,
             startTime: startTime
         ))
 
