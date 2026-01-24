@@ -8,7 +8,6 @@ struct ResultsView: View {
     @State private var filterExtension: String?
     @State private var isProcessing = false
     @State private var quickLookFile: ScannedFile?
-    @State private var showQuickLook = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,7 +42,6 @@ struct ResultsView: View {
                 onRevealFile: { viewModel.revealInFinder($0) },
                 onQuickLook: { file in
                     quickLookFile = file
-                    showQuickLook = true
                 }
             )
 
@@ -66,11 +64,8 @@ struct ResultsView: View {
                 }
             )
         }
-        .sheet(isPresented: $showQuickLook) {
-            if let file = quickLookFile {
-                QuickLookPreview(url: file.url)
-                    .frame(minWidth: 600, minHeight: 400)
-            }
+        .sheet(item: $quickLookFile) { file in
+            QuickLookSheet(url: file.url)
         }
     }
 

@@ -6,13 +6,12 @@ struct QuickLookPreview: NSViewRepresentable {
     let url: URL
 
     func makeNSView(context: Context) -> QLPreviewView {
-        let previewView = QLPreviewView()
-        previewView.previewItem = url as QLPreviewItem
-        return previewView
+        QLPreviewView()
     }
 
     func updateNSView(_ nsView: QLPreviewView, context: Context) {
         nsView.previewItem = url as QLPreviewItem
+        nsView.refreshPreviewItem()
     }
 }
 
@@ -55,7 +54,7 @@ struct QuickLookSheet: View {
 
             // Preview
             QuickLookPreview(url: url)
-                .frame(minWidth: 500, minHeight: 300)
+                .frame(minWidth: 700, minHeight: 500)
         }
     }
 }
