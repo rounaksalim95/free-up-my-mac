@@ -8,6 +8,7 @@ struct ResultsView: View {
     @State private var filterExtension: String?
     @State private var isProcessing = false
     @State private var quickLookFile: ScannedFile?
+    @State private var showTrashConfirmation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,11 +54,7 @@ struct ResultsView: View {
                 selectedSize: viewModel.selectedSavings,
                 isProcessing: isProcessing,
                 onTrash: {
-                    Task {
-                        isProcessing = true
-                        _ = await viewModel.trashSelectedFiles()
-                        isProcessing = false
-                    }
+                    showTrashConfirmation = true
                 },
                 onNewScan: {
                     viewModel.resetToIdle()
@@ -66,6 +63,54 @@ struct ResultsView: View {
         }
         .sheet(item: $quickLookFile) { file in
             QuickLookSheet(url: file.url)
+        }
+        .alert("Move to Trash", isPresented: $showTrashConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Move to Trash", role: .destructive) {
+                Task {
+                    isProcessing = true
+                    _ = await viewModel.trashSelectedFiles()
+                    isProcessing = false
+                }
+            }
+        } message: {
+            Text(trashConfirmationMessage)
+        }
+        .alert("Trash Complete", isPresented: $viewModel.showTrashResult) {
+            Button("OK", role: .cancel) {
+                viewModel.showTrashResult = false
+            }
+        } message: {
+            if let result = viewModel.lastTrashResult {
+                Text(trashResultMessage(for: result))
+            }
+        }
+    }
+
+    // MARK: - Confirmation Messages
+
+    private var trashConfirmationMessage: String {
+        let count = viewModel.selectedFilesCount
+        let size = ByteFormatter.format(viewModel.selectedSavings)
+        let fileWord = count == 1 ? "file" : "files"
+        return "Move \(count) \(fileWord) (\(size)) to Trash? This can be undone from Trash."
+    }
+
+    private func trashResultMessage(for result: TrashResult) -> String {
+        if result.wasCompleteSuccess {
+            let size = ByteFormatter.format(result.bytesFreed)
+            let fileWord = result.trashedCount == 1 ? "file" : "files"
+            return "Successfully moved \(result.trashedCount) \(fileWord) (\(size)) to Trash."
+        } else if result.wasPartialSuccess {
+            let size = ByteFormatter.format(result.bytesFreed)
+            let trashedWord = result.trashedCount == 1 ? "file" : "files"
+            let failedWord = result.failedFiles.count == 1 ? "file" : "files"
+            return "Moved \(result.trashedCount) \(trashedWord) (\(size)) to Trash. \(result.failedFiles.count) \(failedWord) failed."
+        } else if result.wasCompleteFailure {
+            let failedWord = result.failedFiles.count == 1 ? "file" : "files"
+            return "Failed to move \(result.failedFiles.count) \(failedWord) to Trash."
+        } else {
+            return "No files were selected."
         }
     }
 

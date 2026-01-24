@@ -38,16 +38,24 @@ final class ScanViewModel {
 
     private var scannerService: FileScannerService
     private var duplicateDetectorService: DuplicateDetectorService
+    private var fileOperationService: FileOperationService
     private var scanTask: Task<Void, Never>?
+
+    // MARK: - Trash Operation State
+
+    var lastTrashResult: TrashResult?
+    var showTrashResult: Bool = false
 
     // MARK: - Initialization
 
     init(
         scannerService: FileScannerService = FileScannerService(),
-        duplicateDetectorService: DuplicateDetectorService = DuplicateDetectorService()
+        duplicateDetectorService: DuplicateDetectorService = DuplicateDetectorService(),
+        fileOperationService: FileOperationService = FileOperationService()
     ) {
         self.scannerService = scannerService
         self.duplicateDetectorService = duplicateDetectorService
+        self.fileOperationService = fileOperationService
     }
 
     // MARK: - Computed Properties
@@ -218,23 +226,96 @@ final class ScanViewModel {
 
     // MARK: - Actions
 
-    func trashSelectedFiles() async -> Bool {
-        // Stub - will be implemented when FileOperationService is complete
-        // For now, just remove from UI
-        guard !selectedFileIds.isEmpty else { return false }
-
-        // Remove selected files from duplicate groups
-        for i in duplicateGroups.indices {
-            duplicateGroups[i].files.removeAll { selectedFileIds.contains($0.id) }
+    /// Trash selected files and return result
+    func trashSelectedFiles() async -> TrashResult {
+        guard !selectedFileIds.isEmpty else {
+            return TrashResult(trashedCount: 0, bytesFreed: 0, failedFiles: [])
         }
 
-        // Remove empty groups
+        // Collect files to trash from selected IDs
+        var filesToTrash: [ScannedFile] = []
+        for group in duplicateGroups {
+            for file in group.files where selectedFileIds.contains(file.id) {
+                filesToTrash.append(file)
+            }
+        }
+
+        guard !filesToTrash.isEmpty else {
+            return TrashResult(trashedCount: 0, bytesFreed: 0, failedFiles: [])
+        }
+
+        var trashedCount = 0
+        var bytesFreed: Int64 = 0
+        var failedFiles: [FailedFile] = []
+
+        do {
+            bytesFreed = try await fileOperationService.moveToTrash(filesToTrash)
+            trashedCount = filesToTrash.count
+        } catch let error as FileOperationError {
+            switch error {
+            case .partialFailure(let count, let bytes, let errors):
+                trashedCount = count
+                bytesFreed = bytes
+                failedFiles = errors.map { convertToFailedFile($0) }
+            case .fileNotFound(let url):
+                failedFiles = [FailedFile(url: url, reason: .notFound)]
+            case .permissionDenied(let url):
+                failedFiles = [FailedFile(url: url, reason: .permissionDenied)]
+            case .trashFailed(let url, let underlyingError):
+                failedFiles = [FailedFile(url: url, reason: .unknown(underlyingError.localizedDescription))]
+            case .deletionFailed(let url, let underlyingError):
+                failedFiles = [FailedFile(url: url, reason: .unknown(underlyingError.localizedDescription))]
+            }
+        } catch {
+            // Unexpected error - treat all files as failed
+            failedFiles = filesToTrash.map {
+                FailedFile(url: $0.url, reason: .unknown(error.localizedDescription))
+            }
+        }
+
+        // Update UI - remove successfully trashed files from groups
+        let failedURLs = Set(failedFiles.map { $0.url })
+        let trashedIds = filesToTrash
+            .filter { !failedURLs.contains($0.url) }
+            .map { $0.id }
+
+        for i in duplicateGroups.indices {
+            duplicateGroups[i].files.removeAll { trashedIds.contains($0.id) }
+        }
+
+        // Remove groups with fewer than 2 files (no longer duplicates)
         duplicateGroups.removeAll { $0.files.count < 2 }
 
         // Clear selection
         selectedFileIds.removeAll()
 
-        return true
+        let result = TrashResult(
+            trashedCount: trashedCount,
+            bytesFreed: bytesFreed,
+            failedFiles: failedFiles
+        )
+
+        lastTrashResult = result
+        showTrashResult = true
+
+        return result
+    }
+
+    /// Convert FileOperationError to FailedFile
+    private func convertToFailedFile(_ error: FileOperationError) -> FailedFile {
+        switch error {
+        case .fileNotFound(let url):
+            return FailedFile(url: url, reason: .notFound)
+        case .permissionDenied(let url):
+            return FailedFile(url: url, reason: .permissionDenied)
+        case .trashFailed(let url, let underlyingError):
+            return FailedFile(url: url, reason: .unknown(underlyingError.localizedDescription))
+        case .deletionFailed(let url, let underlyingError):
+            return FailedFile(url: url, reason: .unknown(underlyingError.localizedDescription))
+        case .partialFailure:
+            // This shouldn't happen in this context
+            return FailedFile(url: URL(fileURLWithPath: "/"), reason: .unknown("Partial failure"))
+        }
     }
 
     func revealInFinder(_ file: ScannedFile) {
