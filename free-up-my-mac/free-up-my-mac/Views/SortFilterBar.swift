@@ -23,7 +23,7 @@ struct SortFilterBar: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 140)
+                .frame(minWidth: 140, maxWidth: 250)
             }
 
             Divider()
@@ -45,7 +45,7 @@ struct SortFilterBar: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 120)
+                .frame(minWidth: 120, maxWidth: 200)
             }
 
             Spacer()
