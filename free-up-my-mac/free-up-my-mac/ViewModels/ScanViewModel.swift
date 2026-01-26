@@ -232,11 +232,16 @@ final class ScanViewModel {
             return TrashResult(trashedCount: 0, bytesFreed: 0, failedFiles: [])
         }
 
-        // Collect files to trash from selected IDs
+        // Collect files to trash from selected IDs, de-duplicating by URL
+        // (same file path could appear multiple times if user scanned overlapping folders)
+        var seenURLs = Set<URL>()
         var filesToTrash: [ScannedFile] = []
         for group in duplicateGroups {
             for file in group.files where selectedFileIds.contains(file.id) {
-                filesToTrash.append(file)
+                if !seenURLs.contains(file.url) {
+                    seenURLs.insert(file.url)
+                    filesToTrash.append(file)
+                }
             }
         }
 
@@ -257,6 +262,9 @@ final class ScanViewModel {
                 trashedCount = count
                 bytesFreed = bytes
                 failedFiles = errors.map { convertToFailedFile($0) }
+            // Note: The cases below are defensive handling. Currently, the batch
+            // moveToTrash(_:) always wraps errors in partialFailure. These cases
+            // handle potential future API changes or direct single-file operations.
             case .fileNotFound(let url):
                 failedFiles = [FailedFile(url: url, reason: .notFound)]
             case .permissionDenied(let url):
