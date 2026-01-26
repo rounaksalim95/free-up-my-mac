@@ -282,13 +282,13 @@ final class ScanViewModel {
         }
 
         // Update UI - remove successfully trashed files from groups
+        // Filter by URL (not ID) to handle cases where the same file appears
+        // multiple times with different IDs from overlapping folder scans
         let failedURLs = Set(failedFiles.map { $0.url })
-        let trashedIds = filesToTrash
-            .filter { !failedURLs.contains($0.url) }
-            .map { $0.id }
+        let trashedURLs = Set(filesToTrash.filter { !failedURLs.contains($0.url) }.map { $0.url })
 
         for i in duplicateGroups.indices {
-            duplicateGroups[i].files.removeAll { trashedIds.contains($0.id) }
+            duplicateGroups[i].files.removeAll { trashedURLs.contains($0.url) }
         }
 
         // Remove groups with fewer than 2 files (no longer duplicates)
