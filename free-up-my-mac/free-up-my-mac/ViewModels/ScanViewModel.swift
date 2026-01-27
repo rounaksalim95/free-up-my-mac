@@ -64,22 +64,36 @@ final class ScanViewModel {
         !selectedFolders.isEmpty && appState != .scanning
     }
 
+    /// Returns the count of unique URLs in the selection (de-duplicated)
+    /// This matches the actual number of files that will be trashed
     var selectedFilesCount: Int {
-        selectedFileIds.count
+        selectedFilesDeduplicatedByURL.count
     }
 
     var totalPotentialSavings: Int64 {
         duplicateGroups.reduce(0) { $0 + $1.potentialSavings }
     }
 
+    /// Returns the total size of unique URLs in the selection (de-duplicated)
+    /// This matches the actual bytes that will be freed when trashing
     var selectedSavings: Int64 {
-        var total: Int64 = 0
+        selectedFilesDeduplicatedByURL.reduce(0) { $0 + $1.size }
+    }
+
+    /// Helper to get selected files de-duplicated by URL
+    /// (same file path could appear multiple times if user scanned overlapping folders)
+    private var selectedFilesDeduplicatedByURL: [ScannedFile] {
+        var seenURLs = Set<URL>()
+        var uniqueFiles: [ScannedFile] = []
         for group in duplicateGroups {
             for file in group.files where selectedFileIds.contains(file.id) {
-                total += file.size
+                if !seenURLs.contains(file.url) {
+                    seenURLs.insert(file.url)
+                    uniqueFiles.append(file)
+                }
             }
         }
-        return total
+        return uniqueFiles
     }
 
     var totalDuplicateFiles: Int {

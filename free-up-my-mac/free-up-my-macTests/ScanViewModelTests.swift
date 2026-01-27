@@ -243,13 +243,22 @@ struct ScanViewModelTests {
         #expect(viewModel.selectedFileIds.isEmpty)
     }
 
-    @Test("Selected files count returns correct count")
+    @Test("Selected files count returns correct count (de-duplicated by URL)")
     func testSelectedFilesCount_ReturnsCorrectCount() async {
         let viewModel = ScanViewModel()
 
-        viewModel.toggleFileSelection(UUID())
-        viewModel.toggleFileSelection(UUID())
-        viewModel.toggleFileSelection(UUID())
+        // Create files with unique URLs
+        let file1 = ScannedFile(url: URL(fileURLWithPath: "/test/file1.txt"), size: 1024)
+        let file2 = ScannedFile(url: URL(fileURLWithPath: "/test/file2.txt"), size: 1024)
+        let file3 = ScannedFile(url: URL(fileURLWithPath: "/test/file3.txt"), size: 2048)
+
+        viewModel.duplicateGroups = [
+            DuplicateGroup(hash: "abc123", size: 1024, files: [file1, file2, file3])
+        ]
+
+        viewModel.toggleFileSelection(file1.id)
+        viewModel.toggleFileSelection(file2.id)
+        viewModel.toggleFileSelection(file3.id)
 
         #expect(viewModel.selectedFilesCount == 3)
     }
