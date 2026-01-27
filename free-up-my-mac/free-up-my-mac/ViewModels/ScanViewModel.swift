@@ -279,14 +279,24 @@ final class ScanViewModel {
             // Note: The cases below are defensive handling. Currently, the batch
             // moveToTrash(_:) always wraps errors in partialFailure. These cases
             // handle potential future API changes or direct single-file operations.
+            // When a single-file error occurs, no files were successfully trashed,
+            // so we treat all files as failed to prevent incorrect UI removal.
             case .fileNotFound(let url):
-                failedFiles = [FailedFile(url: url, reason: .notFound)]
+                failedFiles = filesToTrash.map {
+                    FailedFile(url: $0.url, reason: $0.url == url ? .notFound : .unknown("Operation aborted"))
+                }
             case .permissionDenied(let url):
-                failedFiles = [FailedFile(url: url, reason: .permissionDenied)]
+                failedFiles = filesToTrash.map {
+                    FailedFile(url: $0.url, reason: $0.url == url ? .permissionDenied : .unknown("Operation aborted"))
+                }
             case .trashFailed(let url, let underlyingError):
-                failedFiles = [FailedFile(url: url, reason: .unknown(underlyingError.localizedDescription))]
+                failedFiles = filesToTrash.map {
+                    FailedFile(url: $0.url, reason: $0.url == url ? .unknown(underlyingError.localizedDescription) : .unknown("Operation aborted"))
+                }
             case .deletionFailed(let url, let underlyingError):
-                failedFiles = [FailedFile(url: url, reason: .unknown(underlyingError.localizedDescription))]
+                failedFiles = filesToTrash.map {
+                    FailedFile(url: $0.url, reason: $0.url == url ? .unknown(underlyingError.localizedDescription) : .unknown("Operation aborted"))
+                }
             }
         } catch {
             // Unexpected error - treat all files as failed
