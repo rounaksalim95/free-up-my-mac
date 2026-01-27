@@ -244,6 +244,7 @@ final class ScanViewModel {
         duplicateGroups.removeAll()
         selectedFileIds.removeAll()
         scannedFiles.removeAll()
+        skippedFiles.removeAll()
         scanProgress = .idle
     }
 

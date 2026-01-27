@@ -22,26 +22,26 @@ help:
 # Build debug configuration
 build:
 	@echo "Building Free Up My Mac (Debug)..."
-	cd $(PROJECT_DIR) && xcodebuild build \
+	cd $(PROJECT_DIR) && set -o pipefail && xcodebuild build \
 		-scheme free-up-my-mac \
 		-configuration Debug \
-		| grep -E "^(Building|Linking|Signing|Build|error:|warning:)" || true
+		| grep -E "^(Building|Linking|Signing|Build|error:|warning:)" || exit 0
 
 # Build release configuration
 release:
 	@echo "Building Free Up My Mac (Release)..."
-	cd $(PROJECT_DIR) && xcodebuild build \
+	cd $(PROJECT_DIR) && set -o pipefail && xcodebuild build \
 		-scheme free-up-my-mac \
 		-configuration Release \
-		| grep -E "^(Building|Linking|Signing|Build|error:|warning:)" || true
+		| grep -E "^(Building|Linking|Signing|Build|error:|warning:)" || exit 0
 
 # Run tests
 test:
 	@echo "Running tests..."
-	cd $(PROJECT_DIR) && xcodebuild test \
+	cd $(PROJECT_DIR) && set -o pipefail && xcodebuild test \
 		-scheme free-up-my-mac \
 		-destination 'platform=macOS' \
-		| grep -E "^(Test|Executed|error:|warning:|✓|✗)" || true
+		| grep -E "^(Test|Executed|error:|warning:|✓|✗)"
 
 # Clean build directory
 clean:
