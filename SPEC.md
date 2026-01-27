@@ -11,8 +11,8 @@ A native macOS application that helps users find and remove duplicate files to f
 - [x] Phase 3: User Interface ✅
 - [x] Phase 4: Duplicate Detection Algorithm ✅
 - [x] Phase 5: File Management & Deletion ✅
-- [ ] Phase 6: History & Sharing Features  ← CURRENT
-- [ ] Phase 7: Polish & Testing
+- [x] Phase 6: History & Sharing Features ✅
+- [ ] Phase 7: Polish & Testing ← CURRENT
 
 ## Development Approach
 
