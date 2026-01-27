@@ -14,17 +14,21 @@ struct FileRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Selection checkbox
+            // Selection checkbox with animation
             Button {
-                onToggle()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                    onToggle()
+                }
             } label: {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
                     .foregroundStyle(isSelected ? .blue : .secondary)
+                    .scaleEffect(isSelected ? 1.0 : 0.95)
             }
             .buttonStyle(.plain)
             .disabled(isOriginal)
             .opacity(isOriginal ? 0.3 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isSelected)
 
             // File icon
             FileIconView(fileExtension: file.fileExtension)
@@ -85,6 +89,7 @@ struct FileRowView: View {
         .padding(.vertical, 8)
         .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
         .onHover { hovering in
             isHovering = hovering
         }

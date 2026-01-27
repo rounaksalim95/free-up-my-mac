@@ -21,6 +21,7 @@ struct ScanProgress: Sendable {
     var totalBytes: Int64
     var startTime: Date?
     var error: String?
+    var skippedFilesCount: Int
 
     nonisolated init(
         phase: ScanPhase = .idle,
@@ -30,7 +31,8 @@ struct ScanProgress: Sendable {
         bytesProcessed: Int64 = 0,
         totalBytes: Int64 = 0,
         startTime: Date? = nil,
-        error: String? = nil
+        error: String? = nil,
+        skippedFilesCount: Int = 0
     ) {
         self.phase = phase
         self.totalFiles = totalFiles
@@ -40,6 +42,7 @@ struct ScanProgress: Sendable {
         self.totalBytes = totalBytes
         self.startTime = startTime
         self.error = error
+        self.skippedFilesCount = skippedFilesCount
     }
 
     var fileProgress: Double {

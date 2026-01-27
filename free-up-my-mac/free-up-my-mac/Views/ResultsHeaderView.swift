@@ -6,6 +6,8 @@ struct ResultsHeaderView: View {
     let totalFiles: Int
     let potentialSavings: Int64
     let scannedFolders: [URL]
+    var skippedFilesCount: Int = 0
+    var onShowSkippedFiles: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 24) {
@@ -30,6 +32,31 @@ struct ResultsHeaderView: View {
                 icon: "arrow.down.circle",
                 valueColor: .green
             )
+
+            // Skipped files warning (only shown if there are skipped files)
+            if skippedFilesCount > 0 {
+                Button {
+                    onShowSkippedFiles?()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.yellow)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(skippedFilesCount)")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.primary)
+
+                            Text("Skipped")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("View skipped files")
+            }
 
             Spacer()
 
@@ -80,7 +107,7 @@ struct StatCard: View {
     }
 }
 
-#Preview {
+#Preview("Without Skipped") {
     ResultsHeaderView(
         totalGroups: 15,
         totalFiles: 47,
@@ -89,6 +116,21 @@ struct StatCard: View {
             URL(fileURLWithPath: "/Users/test/Documents"),
             URL(fileURLWithPath: "/Users/test/Downloads")
         ]
+    )
+    .frame(width: 800)
+}
+
+#Preview("With Skipped Files") {
+    ResultsHeaderView(
+        totalGroups: 15,
+        totalFiles: 47,
+        potentialSavings: 1024 * 1024 * 256,
+        scannedFolders: [
+            URL(fileURLWithPath: "/Users/test/Documents"),
+            URL(fileURLWithPath: "/Users/test/Downloads")
+        ],
+        skippedFilesCount: 5,
+        onShowSkippedFiles: {}
     )
     .frame(width: 800)
 }

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import xxHash_Swift
 
 enum HashError: Error, Sendable, Equatable {
@@ -8,6 +9,7 @@ enum HashError: Error, Sendable, Equatable {
 }
 
 actor FileHasherService {
+    private static let logger = Logger(subsystem: "com.freeup.mac", category: "FileHasherService")
     private let partialHashSize: Int
     private let chunkSize: Int
     private let maxConcurrentOperations: Int
@@ -133,6 +135,7 @@ actor FileHasherService {
                             return try transform(file)
                         } catch let error as HashError where error != .cancelled {
                             // Skip files that fail due to permission/read errors
+                            Self.logger.error("Hashing failed for \(file.url.path): \(String(describing: error))")
                             return nil
                         }
                         // HashError.cancelled and other errors propagate up

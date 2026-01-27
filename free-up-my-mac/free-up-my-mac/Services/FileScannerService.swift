@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Errors that can occur during file scanning
 enum ScanError: Error, Sendable, Equatable {
@@ -10,6 +11,7 @@ enum ScanError: Error, Sendable, Equatable {
 actor FileScannerService {
     private let filters: FileFilters
     private var isCancelled = false
+    private static let logger = Logger(subsystem: "com.freeup.mac", category: "FileScannerService")
 
     /// Resource keys to pre-fetch for efficient file enumeration
     private static let resourceKeys: [URLResourceKey] = [
@@ -25,6 +27,12 @@ actor FileScannerService {
         self.filters = filters
     }
 
+    /// Scan result containing files and any skipped files
+    struct ScanDirectoryResult: Sendable {
+        let files: [ScannedFile]
+        let skippedFiles: [SkippedFile]
+    }
+
     /// Scan a directory and return all files matching the filter criteria
     /// - Parameters:
     ///   - url: The directory URL to scan
@@ -34,6 +42,19 @@ actor FileScannerService {
         at url: URL,
         progress: @escaping @Sendable (ScanProgress) -> Void
     ) async throws -> [ScannedFile] {
+        let result = try await scanDirectoryWithSkipped(at: url, progress: progress)
+        return result.files
+    }
+
+    /// Scan a directory and return all files matching the filter criteria, including skipped files
+    /// - Parameters:
+    ///   - url: The directory URL to scan
+    ///   - progress: A callback for progress updates
+    /// - Returns: ScanDirectoryResult containing files and skipped files
+    func scanDirectoryWithSkipped(
+        at url: URL,
+        progress: @escaping @Sendable (ScanProgress) -> Void
+    ) async throws -> ScanDirectoryResult {
         // Reset cancellation flag
         isCancelled = false
 
@@ -45,6 +66,7 @@ actor FileScannerService {
         }
 
         var scannedFiles: [ScannedFile] = []
+        var skippedFiles: [SkippedFile] = []
         var processedCount = 0
         var totalBytesProcessed: Int64 = 0
         let startTime = Date()
@@ -133,13 +155,15 @@ actor FileScannerService {
                         processedFiles: processedCount,
                         currentFile: fileURL.path,
                         bytesProcessed: totalBytesProcessed,
-                        startTime: startTime
+                        startTime: startTime,
+                        skippedFilesCount: skippedFiles.count
                     ))
                 }
 
             } catch {
                 // Handle permission errors gracefully - skip the file and continue
-                // Log the error but don't stop scanning
+                Self.logger.error("Skipped file \(fileURL.path): \(error.localizedDescription)")
+                skippedFiles.append(SkippedFile(url: fileURL, reason: .permissionDenied))
                 continue
             }
         }
@@ -151,10 +175,11 @@ actor FileScannerService {
             processedFiles: scannedFiles.count,
             bytesProcessed: totalBytesProcessed,
             totalBytes: totalBytesProcessed,
-            startTime: startTime
+            startTime: startTime,
+            skippedFilesCount: skippedFiles.count
         ))
 
-        return scannedFiles
+        return ScanDirectoryResult(files: scannedFiles, skippedFiles: skippedFiles)
     }
 
     /// Cancel an in-progress scan

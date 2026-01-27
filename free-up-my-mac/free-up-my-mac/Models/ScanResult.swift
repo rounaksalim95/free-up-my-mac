@@ -8,6 +8,7 @@ struct ScanResult: Sendable {
     let duplicateGroups: [DuplicateGroup]
     let scanDuration: TimeInterval
     let errors: [String]
+    let skippedFiles: [SkippedFile]
 
     init(
         scanDate: Date = Date(),
@@ -16,7 +17,8 @@ struct ScanResult: Sendable {
         totalBytesScanned: Int64,
         duplicateGroups: [DuplicateGroup],
         scanDuration: TimeInterval,
-        errors: [String] = []
+        errors: [String] = [],
+        skippedFiles: [SkippedFile] = []
     ) {
         self.scanDate = scanDate
         self.scannedDirectory = scannedDirectory
@@ -25,6 +27,7 @@ struct ScanResult: Sendable {
         self.duplicateGroups = duplicateGroups
         self.scanDuration = scanDuration
         self.errors = errors
+        self.skippedFiles = skippedFiles
     }
 
     var totalDuplicateFiles: Int {

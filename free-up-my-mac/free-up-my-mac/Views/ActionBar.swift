@@ -1,5 +1,33 @@
 import SwiftUI
 
+/// View extension for hover scale effect
+extension View {
+    func hoverScale() -> some View {
+        modifier(HoverScaleModifier())
+    }
+}
+
+/// Modifier that adds subtle scale effects on hover and press
+struct HoverScaleModifier: ViewModifier {
+    @State private var isHovering = false
+    @State private var isPressed = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isPressed ? 0.97 : (isHovering ? 1.02 : 1.0))
+            .animation(.easeInOut(duration: 0.1), value: isPressed)
+            .animation(.easeInOut(duration: 0.15), value: isHovering)
+            .onHover { hovering in
+                isHovering = hovering
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in isPressed = true }
+                    .onEnded { _ in isPressed = false }
+            )
+    }
+}
+
 /// Bottom action bar with selection count and trash button
 struct ActionBar: View {
     let selectedCount: Int
@@ -17,6 +45,7 @@ struct ActionBar: View {
                 Label("New Scan", systemImage: "arrow.counterclockwise")
             }
             .buttonStyle(.bordered)
+            .hoverScale()
 
             Spacer()
 
@@ -48,6 +77,7 @@ struct ActionBar: View {
             .tint(.red)
             .disabled(selectedCount == 0 || isProcessing)
             .keyboardShortcut(.delete, modifiers: .command)
+            .hoverScale()
         }
         .padding()
         .background(Color(nsColor: .controlBackgroundColor))

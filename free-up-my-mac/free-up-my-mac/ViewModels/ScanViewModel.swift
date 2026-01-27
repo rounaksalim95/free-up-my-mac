@@ -33,6 +33,8 @@ final class ScanViewModel {
     var duplicateGroups: [DuplicateGroup] = []
     var selectedFileIds: Set<UUID> = []
     var scannedFiles: [ScannedFile] = []
+    var skippedFiles: [SkippedFile] = []
+    var showSkippedFilesAlert: Bool = false
 
     // MARK: - Services
 
@@ -158,6 +160,7 @@ final class ScanViewModel {
         scannedFiles.removeAll()
         duplicateGroups.removeAll()
         selectedFileIds.removeAll()
+        skippedFiles.removeAll()
         appState = .scanning
         scanProgress = ScanProgress(phase: .enumerating, startTime: Date())
 
@@ -168,17 +171,20 @@ final class ScanViewModel {
 
         do {
             var allFiles: [ScannedFile] = []
+            var allSkippedFiles: [SkippedFile] = []
 
             for folder in selectedFolders {
-                let files = try await scannerService.scanDirectory(at: folder) { [weak self] progress in
+                let result = try await scannerService.scanDirectoryWithSkipped(at: folder) { [weak self] progress in
                     Task { @MainActor in
                         self?.scanProgress = progress
                     }
                 }
-                allFiles.append(contentsOf: files)
+                allFiles.append(contentsOf: result.files)
+                allSkippedFiles.append(contentsOf: result.skippedFiles)
             }
 
             scannedFiles = allFiles
+            skippedFiles = allSkippedFiles
 
             // Create a new detector service for this scan
             duplicateDetectorService = DuplicateDetectorService()
@@ -377,10 +383,12 @@ final class ScanViewModel {
     }
 
     func revealInFinder(_ file: ScannedFile) {
+        guard FileManager.default.fileExists(atPath: file.url.path) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([file.url])
     }
 
     func openFile(_ file: ScannedFile) {
+        guard FileManager.default.fileExists(atPath: file.url.path) else { return }
         NSWorkspace.shared.open(file.url)
     }
 }
