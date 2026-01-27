@@ -243,13 +243,22 @@ struct ScanViewModelTests {
         #expect(viewModel.selectedFileIds.isEmpty)
     }
 
-    @Test("Selected files count returns correct count")
+    @Test("Selected files count returns correct count (de-duplicated by URL)")
     func testSelectedFilesCount_ReturnsCorrectCount() async {
         let viewModel = ScanViewModel()
 
-        viewModel.toggleFileSelection(UUID())
-        viewModel.toggleFileSelection(UUID())
-        viewModel.toggleFileSelection(UUID())
+        // Create files with unique URLs
+        let file1 = ScannedFile(url: URL(fileURLWithPath: "/test/file1.txt"), size: 1024)
+        let file2 = ScannedFile(url: URL(fileURLWithPath: "/test/file2.txt"), size: 1024)
+        let file3 = ScannedFile(url: URL(fileURLWithPath: "/test/file3.txt"), size: 2048)
+
+        viewModel.duplicateGroups = [
+            DuplicateGroup(hash: "abc123", size: 1024, files: [file1, file2, file3])
+        ]
+
+        viewModel.toggleFileSelection(file1.id)
+        viewModel.toggleFileSelection(file2.id)
+        viewModel.toggleFileSelection(file3.id)
 
         #expect(viewModel.selectedFilesCount == 3)
     }
@@ -323,5 +332,149 @@ struct ScanViewModelTests {
         } else {
             Issue.record("Expected error state")
         }
+    }
+
+    // MARK: - Trash Operation Tests
+
+    @Test("Trash selected files removes from groups")
+    func testTrashSelectedFiles_RemovesFromGroups() async throws {
+        let testDir = try TestDirectory.create()
+        defer { try? testDir.cleanup() }
+
+        // Create actual files that can be trashed
+        let file1URL = try testDir.addFile(name: "file1.txt", size: 1024)
+        let file2URL = try testDir.addFile(name: "file2.txt", size: 1024)
+        let file3URL = try testDir.addFile(name: "file3.txt", size: 1024)
+
+        let file1 = ScannedFile(url: file1URL, size: 1024)
+        let file2 = ScannedFile(url: file2URL, size: 1024)
+        let file3 = ScannedFile(url: file3URL, size: 1024)
+
+        let viewModel = ScanViewModel()
+        viewModel.duplicateGroups = [
+            DuplicateGroup(hash: "abc123", size: 1024, files: [file1, file2, file3])
+        ]
+
+        // Select file2 for deletion (keep file1 as "original")
+        viewModel.toggleFileSelection(file2.id)
+
+        let result = await viewModel.trashSelectedFiles()
+
+        // Verify result
+        #expect(result.trashedCount == 1)
+        #expect(result.bytesFreed == 1024)
+        #expect(result.wasCompleteSuccess)
+
+        // Verify file2 was removed from the group
+        #expect(viewModel.duplicateGroups.count == 1)
+        #expect(viewModel.duplicateGroups[0].files.count == 2)
+        #expect(!viewModel.duplicateGroups[0].files.contains { $0.id == file2.id })
+
+        // Verify file was actually trashed
+        #expect(!FileManager.default.fileExists(atPath: file2URL.path))
+    }
+
+    @Test("Trash all but one file removes entire group")
+    func testTrashAllButOneFile_RemovesEntireGroup() async throws {
+        let testDir = try TestDirectory.create()
+        defer { try? testDir.cleanup() }
+
+        let file1URL = try testDir.addFile(name: "file1.txt", size: 1024)
+        let file2URL = try testDir.addFile(name: "file2.txt", size: 1024)
+
+        let file1 = ScannedFile(url: file1URL, size: 1024)
+        let file2 = ScannedFile(url: file2URL, size: 1024)
+
+        let viewModel = ScanViewModel()
+        viewModel.duplicateGroups = [
+            DuplicateGroup(hash: "abc123", size: 1024, files: [file1, file2])
+        ]
+
+        // Select file2 for deletion - this leaves only 1 file
+        viewModel.toggleFileSelection(file2.id)
+
+        let result = await viewModel.trashSelectedFiles()
+
+        #expect(result.trashedCount == 1)
+
+        // Group should be removed since only 1 file remains
+        #expect(viewModel.duplicateGroups.isEmpty)
+    }
+
+    @Test("Trash with no selection returns empty result")
+    func testTrashWithNoSelection_ReturnsEmptyResult() async {
+        let viewModel = ScanViewModel()
+
+        let file1 = ScannedFile(url: URL(fileURLWithPath: "/test/file1.txt"), size: 1024)
+        let file2 = ScannedFile(url: URL(fileURLWithPath: "/test/file2.txt"), size: 1024)
+
+        viewModel.duplicateGroups = [
+            DuplicateGroup(hash: "abc123", size: 1024, files: [file1, file2])
+        ]
+
+        // Don't select any files
+        let result = await viewModel.trashSelectedFiles()
+
+        #expect(result.trashedCount == 0)
+        #expect(result.bytesFreed == 0)
+        #expect(result.failedFiles.isEmpty)
+        #expect(result.wasEmpty)
+
+        // Groups should be unchanged
+        #expect(viewModel.duplicateGroups.count == 1)
+    }
+
+    @Test("Trash clears selection after operation")
+    func testTrashClearsSelectionAfterOperation() async throws {
+        let testDir = try TestDirectory.create()
+        defer { try? testDir.cleanup() }
+
+        let file1URL = try testDir.addFile(name: "file1.txt", size: 1024)
+        let file2URL = try testDir.addFile(name: "file2.txt", size: 1024)
+        let file3URL = try testDir.addFile(name: "file3.txt", size: 1024)
+
+        let file1 = ScannedFile(url: file1URL, size: 1024)
+        let file2 = ScannedFile(url: file2URL, size: 1024)
+        let file3 = ScannedFile(url: file3URL, size: 1024)
+
+        let viewModel = ScanViewModel()
+        viewModel.duplicateGroups = [
+            DuplicateGroup(hash: "abc123", size: 1024, files: [file1, file2, file3])
+        ]
+
+        viewModel.toggleFileSelection(file2.id)
+        #expect(viewModel.selectedFileIds.count == 1)
+
+        _ = await viewModel.trashSelectedFiles()
+
+        #expect(viewModel.selectedFileIds.isEmpty)
+    }
+
+    @Test("Trash shows result flag after operation")
+    func testTrashShowsResultFlagAfterOperation() async throws {
+        let testDir = try TestDirectory.create()
+        defer { try? testDir.cleanup() }
+
+        let file1URL = try testDir.addFile(name: "file1.txt", size: 1024)
+        let file2URL = try testDir.addFile(name: "file2.txt", size: 1024)
+        let file3URL = try testDir.addFile(name: "file3.txt", size: 1024)
+
+        let file1 = ScannedFile(url: file1URL, size: 1024)
+        let file2 = ScannedFile(url: file2URL, size: 1024)
+        let file3 = ScannedFile(url: file3URL, size: 1024)
+
+        let viewModel = ScanViewModel()
+        viewModel.duplicateGroups = [
+            DuplicateGroup(hash: "abc123", size: 1024, files: [file1, file2, file3])
+        ]
+
+        viewModel.toggleFileSelection(file2.id)
+
+        #expect(!viewModel.showTrashResult)
+
+        _ = await viewModel.trashSelectedFiles()
+
+        #expect(viewModel.showTrashResult)
+        #expect(viewModel.lastTrashResult != nil)
     }
 }
