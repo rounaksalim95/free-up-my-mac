@@ -6,44 +6,102 @@ import Foundation
 @MainActor
 struct HistoryViewModelTests {
 
-    // MARK: - Initial State Tests
-
-    @Test("Initial sessions is empty for mock data")
-    func testInitialSessions_IsEmptyOrMocked() async {
-        let viewModel = HistoryViewModel()
-
-        // With mock data, we expect some sessions
-        // When HistoryManager is implemented, this will load from UserDefaults
-        #expect(viewModel.sessions.count >= 0)
+    /// Helper to create a temporary test history URL
+    private func createTempHistoryURL() -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        return tempDir.appendingPathComponent("test-history-viewmodel-\(UUID().uuidString).json")
     }
 
-    @Test("Initial stats contains cumulative data")
-    func testInitialStats_ContainsCumulativeData() async {
+    /// Helper to clean up a test file
+    private func cleanup(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    // MARK: - Initial State Tests
+
+    @Test("Initial sessions is empty")
+    func testInitialSessions_IsEmpty() async {
         let viewModel = HistoryViewModel()
 
-        // Stats should be non-nil
-        #expect(viewModel.stats != nil)
+        #expect(viewModel.sessions.isEmpty)
+    }
+
+    @Test("Initial stats is nil")
+    func testInitialStats_IsNil() async {
+        let viewModel = HistoryViewModel()
+
+        #expect(viewModel.stats == nil)
+    }
+
+    @Test("Initial loading state is false")
+    func testInitialLoadingState_IsFalse() async {
+        let viewModel = HistoryViewModel()
+
+        #expect(viewModel.isLoading == false)
+    }
+
+    @Test("Initial error message is nil")
+    func testInitialErrorMessage_IsNil() async {
+        let viewModel = HistoryViewModel()
+
+        #expect(viewModel.errorMessage == nil)
     }
 
     // MARK: - Loading Tests
 
-    @Test("Load sessions populates sessions array")
-    func testLoadSessions_PopulatesSessions() async {
-        let viewModel = HistoryViewModel()
+    @Test("Load data populates sessions and stats")
+    func testLoadData_PopulatesSessionsAndStats() async throws {
+        let historyURL = createTempHistoryURL()
+        defer { cleanup(historyURL) }
 
-        viewModel.loadSessions()
+        let manager = HistoryManager(historyFileURL: historyURL)
 
-        // Should have loaded mock data
-        #expect(viewModel.sessions.count >= 0)
+        // Add a session to history
+        let session = CleanupSession(
+            scannedDirectories: ["~/Downloads"],
+            filesDeleted: 10,
+            bytesRecovered: 1024,
+            duplicateGroupsCleaned: 5
+        )
+        try await manager.saveSession(session)
+
+        let viewModel = HistoryViewModel(historyManager: manager)
+        await viewModel.loadData()
+
+        #expect(viewModel.sessions.count == 1)
+        #expect(viewModel.sessions[0].id == session.id)
+        #expect(viewModel.stats != nil)
+        #expect(viewModel.stats?.totalFilesDeleted == 10)
     }
 
-    @Test("Load stats populates stats")
-    func testLoadStats_PopulatesStats() async {
-        let viewModel = HistoryViewModel()
+    @Test("Load data with empty history returns empty arrays")
+    func testLoadData_WithEmptyHistory_ReturnsEmpty() async {
+        let historyURL = createTempHistoryURL()
+        defer { cleanup(historyURL) }
 
-        viewModel.loadStats()
+        let manager = HistoryManager(historyFileURL: historyURL)
+        let viewModel = HistoryViewModel(historyManager: manager)
 
-        #expect(viewModel.stats != nil)
+        await viewModel.loadData()
+
+        #expect(viewModel.sessions.isEmpty)
+        #expect(viewModel.stats?.totalFilesDeleted == 0)
+        #expect(viewModel.stats?.totalBytesRecovered == 0)
+    }
+
+    @Test("Loading state toggles during load")
+    func testLoadingState_TogglesDuringLoad() async {
+        let historyURL = createTempHistoryURL()
+        defer { cleanup(historyURL) }
+
+        let manager = HistoryManager(historyFileURL: historyURL)
+        let viewModel = HistoryViewModel(historyManager: manager)
+
+        #expect(!viewModel.isLoading)
+
+        await viewModel.loadData()
+
+        #expect(!viewModel.isLoading)
     }
 
     // MARK: - Formatting Tests
@@ -70,53 +128,129 @@ struct HistoryViewModelTests {
     // MARK: - Session Management Tests
 
     @Test("Clear history removes all sessions")
-    func testClearHistory_RemovesAllSessions() async {
-        let viewModel = HistoryViewModel()
+    func testClearHistory_RemovesAllSessions() async throws {
+        let historyURL = createTempHistoryURL()
+        defer { cleanup(historyURL) }
 
-        viewModel.clearHistory()
+        let manager = HistoryManager(historyFileURL: historyURL)
+
+        // Add some sessions first
+        let session = CleanupSession(
+            scannedDirectories: ["~/Downloads"],
+            filesDeleted: 10,
+            bytesRecovered: 1024,
+            duplicateGroupsCleaned: 5
+        )
+        try await manager.saveSession(session)
+
+        let viewModel = HistoryViewModel(historyManager: manager)
+        await viewModel.loadData()
+
+        #expect(!viewModel.sessions.isEmpty)
+
+        await viewModel.clearHistory()
 
         #expect(viewModel.sessions.isEmpty)
         #expect(viewModel.stats?.totalSessionsCompleted == 0)
     }
 
     @Test("Delete session removes specific session")
-    func testDeleteSession_RemovesSpecificSession() async {
-        let viewModel = HistoryViewModel()
+    func testDeleteSession_RemovesSpecificSession() async throws {
+        let historyURL = createTempHistoryURL()
+        defer { cleanup(historyURL) }
 
-        // Add mock sessions if empty
-        if viewModel.sessions.isEmpty {
-            viewModel.sessions = MockDataProvider.generatePreviewSessions(count: 3)
-        }
+        let manager = HistoryManager(historyFileURL: historyURL)
+
+        // Add sessions
+        let session1 = CleanupSession(
+            scannedDirectories: ["~/First"],
+            filesDeleted: 10,
+            bytesRecovered: 1000,
+            duplicateGroupsCleaned: 5
+        )
+        let session2 = CleanupSession(
+            scannedDirectories: ["~/Second"],
+            filesDeleted: 20,
+            bytesRecovered: 2000,
+            duplicateGroupsCleaned: 8
+        )
+
+        try await manager.saveSession(session1)
+        try await manager.saveSession(session2)
+
+        let viewModel = HistoryViewModel(historyManager: manager)
+        await viewModel.loadData()
 
         let initialCount = viewModel.sessions.count
-        guard let firstSession = viewModel.sessions.first else {
-            Issue.record("No sessions to delete")
-            return
-        }
+        #expect(initialCount == 2)
 
-        viewModel.deleteSession(firstSession)
+        await viewModel.deleteSession(session1)
 
-        #expect(viewModel.sessions.count == initialCount - 1)
-        #expect(!viewModel.sessions.contains { $0.id == firstSession.id })
+        #expect(viewModel.sessions.count == 1)
+        #expect(!viewModel.sessions.contains { $0.id == session1.id })
+        #expect(viewModel.sessions.contains { $0.id == session2.id })
     }
 
     // MARK: - Stats Calculation Tests
 
-    @Test("Total savings from stats calculates correctly")
-    func testTotalSavingsFromStats_CalculatesCorrectly() async {
-        let viewModel = HistoryViewModel()
+    @Test("Stats are correctly computed from history")
+    func testStats_AreCorrectlyComputedFromHistory() async throws {
+        let historyURL = createTempHistoryURL()
+        defer { cleanup(historyURL) }
 
-        // Set stats after initialization
-        let testStats = SavingsStats(
-            totalFilesDeleted: 50,
-            totalBytesRecovered: 1024 * 1024 * 500,
-            totalSessionsCompleted: 5
+        let manager = HistoryManager(historyFileURL: historyURL)
+
+        let session1 = CleanupSession(
+            scannedDirectories: ["~/First"],
+            filesDeleted: 10,
+            bytesRecovered: 1000,
+            duplicateGroupsCleaned: 5
         )
-        viewModel.stats = testStats
 
-        #expect(viewModel.stats != nil)
-        #expect(viewModel.stats!.totalBytesRecovered == testStats.totalBytesRecovered)
-        #expect(viewModel.stats!.totalFilesDeleted == testStats.totalFilesDeleted)
-        #expect(viewModel.stats!.totalSessionsCompleted == testStats.totalSessionsCompleted)
+        let session2 = CleanupSession(
+            scannedDirectories: ["~/Second"],
+            filesDeleted: 20,
+            bytesRecovered: 2000,
+            duplicateGroupsCleaned: 8
+        )
+
+        try await manager.saveSession(session1)
+        try await manager.saveSession(session2)
+
+        let viewModel = HistoryViewModel(historyManager: manager)
+        await viewModel.loadData()
+
+        #expect(viewModel.stats?.totalFilesDeleted == 30)
+        #expect(viewModel.stats?.totalBytesRecovered == 3000)
+        #expect(viewModel.stats?.totalSessionsCompleted == 2)
+    }
+
+    // MARK: - Refresh Tests
+
+    @Test("Refresh reloads data")
+    func testRefresh_ReloadsData() async throws {
+        let historyURL = createTempHistoryURL()
+        defer { cleanup(historyURL) }
+
+        let manager = HistoryManager(historyFileURL: historyURL)
+        let viewModel = HistoryViewModel(historyManager: manager)
+
+        // Load initially empty
+        await viewModel.loadData()
+        #expect(viewModel.sessions.isEmpty)
+
+        // Add a session directly to the manager
+        let session = CleanupSession(
+            scannedDirectories: ["~/Downloads"],
+            filesDeleted: 10,
+            bytesRecovered: 1024,
+            duplicateGroupsCleaned: 5
+        )
+        try await manager.saveSession(session)
+
+        // Refresh should pick up the new session
+        await viewModel.refresh()
+
+        #expect(viewModel.sessions.count == 1)
     }
 }

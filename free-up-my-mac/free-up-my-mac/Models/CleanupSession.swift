@@ -27,12 +27,48 @@ struct SavingsStats: Sendable, Codable {
 struct CleanupSession: Identifiable, Sendable, Codable {
     let id: UUID
     let date: Date
-    let scannedDirectory: String
+    let scannedDirectories: [String]
     let filesDeleted: Int
     let bytesRecovered: Int64
     let duplicateGroupsCleaned: Int
     let errors: [String]
 
+    /// Computed property for backwards compatibility with UI that expects a single string
+    var scannedDirectory: String {
+        scannedDirectories.joined(separator: ", ")
+    }
+
+    /// CodingKeys to map JSON schema field names to Swift property names
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case date
+        case scannedDirectories
+        case filesDeleted
+        case bytesRecovered = "spaceSaved"  // JSON uses spaceSaved, we use bytesRecovered
+        case duplicateGroupsCleaned
+        case errors
+    }
+
+    /// Initialize with multiple directories
+    init(
+        id: UUID = UUID(),
+        date: Date = Date(),
+        scannedDirectories: [String],
+        filesDeleted: Int,
+        bytesRecovered: Int64,
+        duplicateGroupsCleaned: Int,
+        errors: [String] = []
+    ) {
+        self.id = id
+        self.date = date
+        self.scannedDirectories = scannedDirectories
+        self.filesDeleted = filesDeleted
+        self.bytesRecovered = bytesRecovered
+        self.duplicateGroupsCleaned = duplicateGroupsCleaned
+        self.errors = errors
+    }
+
+    /// Convenience initializer for single directory (backwards compatibility)
     init(
         id: UUID = UUID(),
         date: Date = Date(),
@@ -42,13 +78,15 @@ struct CleanupSession: Identifiable, Sendable, Codable {
         duplicateGroupsCleaned: Int,
         errors: [String] = []
     ) {
-        self.id = id
-        self.date = date
-        self.scannedDirectory = scannedDirectory
-        self.filesDeleted = filesDeleted
-        self.bytesRecovered = bytesRecovered
-        self.duplicateGroupsCleaned = duplicateGroupsCleaned
-        self.errors = errors
+        self.init(
+            id: id,
+            date: date,
+            scannedDirectories: [scannedDirectory],
+            filesDeleted: filesDeleted,
+            bytesRecovered: bytesRecovered,
+            duplicateGroupsCleaned: duplicateGroupsCleaned,
+            errors: errors
+        )
     }
 
     var wasSuccessful: Bool {

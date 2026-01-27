@@ -39,6 +39,7 @@ final class ScanViewModel {
     private var scannerService: FileScannerService
     private var duplicateDetectorService: DuplicateDetectorService
     private var fileOperationService: FileOperationService
+    private let historyManager: HistoryManager
     private var scanTask: Task<Void, Never>?
 
     // MARK: - Trash Operation State
@@ -51,11 +52,13 @@ final class ScanViewModel {
     init(
         scannerService: FileScannerService = FileScannerService(),
         duplicateDetectorService: DuplicateDetectorService = DuplicateDetectorService(),
-        fileOperationService: FileOperationService = FileOperationService()
+        fileOperationService: FileOperationService = FileOperationService(),
+        historyManager: HistoryManager = HistoryManager()
     ) {
         self.scannerService = scannerService
         self.duplicateDetectorService = duplicateDetectorService
         self.fileOperationService = fileOperationService
+        self.historyManager = historyManager
     }
 
     // MARK: - Computed Properties
@@ -330,7 +333,30 @@ final class ScanViewModel {
         lastTrashResult = result
         showTrashResult = true
 
+        // Record cleanup session to history if any files were trashed
+        if trashedCount > 0 {
+            await recordCleanupSession(result: result)
+        }
+
         return result
+    }
+
+    /// Record a cleanup session to history
+    private func recordCleanupSession(result: TrashResult) async {
+        let session = CleanupSession(
+            scannedDirectories: selectedFolders.map { $0.path },
+            filesDeleted: result.trashedCount,
+            bytesRecovered: result.bytesFreed,
+            duplicateGroupsCleaned: 0, // Could track affected groups if needed
+            errors: result.failedFiles.map { $0.reason.localizedDescription }
+        )
+
+        do {
+            try await historyManager.saveSession(session)
+        } catch {
+            // Log but don't fail the trash operation
+            print("Failed to record cleanup session: \(error)")
+        }
     }
 
     /// Convert FileOperationError to FailedFile
