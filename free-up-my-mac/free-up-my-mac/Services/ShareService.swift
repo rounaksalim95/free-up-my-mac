@@ -134,12 +134,12 @@ struct ShareService: Sendable {
             for file in group.files {
                 let row = [
                     String(groupIndex + 1),
-                    group.hash,
+                    escapeCSV(group.hash),
                     escapeCSV(file.url.path),
                     String(file.size),
-                    ByteFormatter.format(file.size),
-                    file.creationDate.map { formatDate($0) } ?? "",
-                    file.modificationDate.map { formatDate($0) } ?? ""
+                    escapeCSV(ByteFormatter.format(file.size)),
+                    escapeCSV(file.creationDate.map { formatDate($0) } ?? ""),
+                    escapeCSV(file.modificationDate.map { formatDate($0) } ?? "")
                 ]
                 lines.append(row.joined(separator: ","))
             }

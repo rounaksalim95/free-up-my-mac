@@ -30,6 +30,11 @@ final class HistoryViewModel {
         isLoading = true
         errorMessage = nil
 
+        // Invalidate cache to ensure we get fresh data from disk
+        // This handles cases where another HistoryManager instance (e.g., in ScanViewModel)
+        // may have written new data since our last load
+        await historyManager.invalidateCache()
+
         do {
             async let sessionsTask = historyManager.loadSessions()
             async let statsTask = historyManager.loadStats()

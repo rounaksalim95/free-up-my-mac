@@ -109,6 +109,12 @@ actor HistoryManager {
         try await writeHistoryFile(.empty)
     }
 
+    /// Invalidate the in-memory cache, forcing next load to read from disk
+    /// Use this when data may have been modified by another instance
+    func invalidateCache() {
+        cachedHistory = nil
+    }
+
     // MARK: - Private Helpers
 
     /// Load history file from disk (or return empty if doesn't exist)
