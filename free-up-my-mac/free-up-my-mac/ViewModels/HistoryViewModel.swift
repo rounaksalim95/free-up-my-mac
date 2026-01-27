@@ -11,49 +11,87 @@ final class HistoryViewModel {
     var sessions: [CleanupSession] = []
     var stats: SavingsStats?
     var isLoading = false
+    var errorMessage: String?
+
+    // MARK: - Dependencies
+
+    private let historyManager: HistoryManager
 
     // MARK: - Initialization
 
-    init() {
-        loadSessions()
-        loadStats()
+    init(historyManager: HistoryManager = HistoryManager()) {
+        self.historyManager = historyManager
     }
 
     // MARK: - Data Loading
 
-    func loadSessions() {
-        // Load from HistoryManager when implemented
-        // For now, use empty or mock data for preview
-        // sessions = [] // Will be populated when HistoryManager is implemented
+    /// Load all data (sessions and stats) from history manager
+    func loadData() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            async let sessionsTask = historyManager.loadSessions()
+            async let statsTask = historyManager.loadStats()
+
+            sessions = try await sessionsTask
+            stats = try await statsTask
+        } catch {
+            errorMessage = "Failed to load history: \(error.localizedDescription)"
+            sessions = []
+            stats = SavingsStats.empty
+        }
+
+        isLoading = false
     }
 
-    func loadStats() {
-        // Load from HistoryManager when implemented
-        // For now, compute from sessions or use empty stats
-        stats = computeStatsFromSessions()
+    /// Load sessions from history manager
+    func loadSessions() async {
+        do {
+            sessions = try await historyManager.loadSessions()
+        } catch {
+            errorMessage = "Failed to load sessions: \(error.localizedDescription)"
+            sessions = []
+        }
     }
 
-    func refresh() {
-        loadSessions()
-        loadStats()
+    /// Load stats from history manager
+    func loadStats() async {
+        do {
+            stats = try await historyManager.loadStats()
+        } catch {
+            errorMessage = "Failed to load stats: \(error.localizedDescription)"
+            stats = SavingsStats.empty
+        }
+    }
+
+    /// Refresh all data
+    func refresh() async {
+        await loadData()
     }
 
     // MARK: - Session Management
 
-    func deleteSession(_ session: CleanupSession) {
-        sessions.removeAll { $0.id == session.id }
-        // When HistoryManager is implemented:
-        // Task { await historyManager.deleteSession(session.id) }
-
-        // Recompute stats
-        stats = computeStatsFromSessions()
+    /// Delete a specific session from history
+    func deleteSession(_ session: CleanupSession) async {
+        do {
+            try await historyManager.deleteSession(session)
+            // Reload to get updated data
+            await loadData()
+        } catch {
+            errorMessage = "Failed to delete session: \(error.localizedDescription)"
+        }
     }
 
-    func clearHistory() {
-        sessions.removeAll()
-        stats = SavingsStats.empty
-        // When HistoryManager is implemented:
-        // Task { await historyManager.clearHistory() }
+    /// Clear all history
+    func clearHistory() async {
+        do {
+            try await historyManager.clearHistory()
+            sessions = []
+            stats = SavingsStats.empty
+        } catch {
+            errorMessage = "Failed to clear history: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Formatting Helpers
@@ -73,18 +111,6 @@ final class HistoryViewModel {
 
     func formatBytes(_ bytes: Int64) -> String {
         ByteFormatter.format(bytes)
-    }
-
-    // MARK: - Private Helpers
-
-    private func computeStatsFromSessions() -> SavingsStats {
-        var stats = SavingsStats.empty
-
-        for session in sessions {
-            stats.add(session)
-        }
-
-        return stats
     }
 }
 

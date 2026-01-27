@@ -477,4 +477,117 @@ struct ScanViewModelTests {
         #expect(viewModel.showTrashResult)
         #expect(viewModel.lastTrashResult != nil)
     }
+
+    // MARK: - History Recording Tests
+
+    /// Helper to create a temporary test history URL
+    private func createTempHistoryURL() -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        return tempDir.appendingPathComponent("test-history-scanvm-\(UUID().uuidString).json")
+    }
+
+    /// Helper to clean up a test file
+    private func cleanupHistoryFile(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    @Test("Trashing files records session to history")
+    func testTrashSelectedFiles_RecordsSessionToHistory() async throws {
+        let testDir = try TestDirectory.create()
+        let historyURL = createTempHistoryURL()
+        defer {
+            try? testDir.cleanup()
+            cleanupHistoryFile(historyURL)
+        }
+
+        let file1URL = try testDir.addFile(name: "file1.txt", size: 1024)
+        let file2URL = try testDir.addFile(name: "file2.txt", size: 1024)
+        let file3URL = try testDir.addFile(name: "file3.txt", size: 1024)
+
+        let file1 = ScannedFile(url: file1URL, size: 1024)
+        let file2 = ScannedFile(url: file2URL, size: 1024)
+        let file3 = ScannedFile(url: file3URL, size: 1024)
+
+        let historyManager = HistoryManager(historyFileURL: historyURL)
+        let viewModel = ScanViewModel(historyManager: historyManager)
+
+        viewModel.addFolder(testDir.url)
+        viewModel.duplicateGroups = [
+            DuplicateGroup(hash: "abc123", size: 1024, files: [file1, file2, file3])
+        ]
+
+        viewModel.toggleFileSelection(file2.id)
+
+        _ = await viewModel.trashSelectedFiles()
+
+        // Verify session was recorded
+        let sessions = try await historyManager.loadSessions()
+        #expect(sessions.count == 1)
+        #expect(sessions[0].filesDeleted == 1)
+        #expect(sessions[0].bytesRecovered == 1024)
+        #expect(sessions[0].scannedDirectories.contains(testDir.url.path))
+    }
+
+    @Test("Trashing zero files does not record session")
+    func testTrashZeroFiles_DoesNotRecordSession() async throws {
+        let historyURL = createTempHistoryURL()
+        defer { cleanupHistoryFile(historyURL) }
+
+        let file1 = ScannedFile(url: URL(fileURLWithPath: "/test/file1.txt"), size: 1024)
+        let file2 = ScannedFile(url: URL(fileURLWithPath: "/test/file2.txt"), size: 1024)
+
+        let historyManager = HistoryManager(historyFileURL: historyURL)
+        let viewModel = ScanViewModel(historyManager: historyManager)
+
+        viewModel.duplicateGroups = [
+            DuplicateGroup(hash: "abc123", size: 1024, files: [file1, file2])
+        ]
+
+        // Don't select any files
+        _ = await viewModel.trashSelectedFiles()
+
+        // Verify no session was recorded
+        let sessions = try await historyManager.loadSessions()
+        #expect(sessions.isEmpty)
+    }
+
+    @Test("Recorded session includes selected folders")
+    func testRecordedSession_IncludesSelectedFolders() async throws {
+        let testDir = try TestDirectory.create()
+        let historyURL = createTempHistoryURL()
+        defer {
+            try? testDir.cleanup()
+            cleanupHistoryFile(historyURL)
+        }
+
+        let file1URL = try testDir.addFile(name: "file1.txt", size: 2048)
+        let file2URL = try testDir.addFile(name: "file2.txt", size: 2048)
+
+        let file1 = ScannedFile(url: file1URL, size: 2048)
+        let file2 = ScannedFile(url: file2URL, size: 2048)
+
+        let historyManager = HistoryManager(historyFileURL: historyURL)
+        let viewModel = ScanViewModel(historyManager: historyManager)
+
+        // Add multiple folders
+        let folder1 = testDir.url
+        let folder2 = URL(fileURLWithPath: "/Users/test/Documents")
+        viewModel.addFolder(folder1)
+        viewModel.addFolder(folder2)
+
+        viewModel.duplicateGroups = [
+            DuplicateGroup(hash: "abc123", size: 2048, files: [file1, file2])
+        ]
+
+        viewModel.toggleFileSelection(file1.id)
+
+        _ = await viewModel.trashSelectedFiles()
+
+        // Verify session includes both folders
+        let sessions = try await historyManager.loadSessions()
+        #expect(sessions.count == 1)
+        #expect(sessions[0].scannedDirectories.count == 2)
+        #expect(sessions[0].scannedDirectories.contains(folder1.path))
+        #expect(sessions[0].scannedDirectories.contains(folder2.path))
+    }
 }
