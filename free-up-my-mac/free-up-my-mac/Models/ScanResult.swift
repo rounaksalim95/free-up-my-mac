@@ -41,16 +41,4 @@ struct ScanResult: Sendable {
     var potentialSavings: Int64 {
         duplicateGroups.reduce(0) { $0 + $1.potentialSavings }
     }
-
-    var wastedSpace: Int64 {
-        potentialSavings
-    }
-
-    var duplicatesByExtension: [String: [DuplicateGroup]] {
-        Dictionary(grouping: duplicateGroups) { $0.fileExtension }
-    }
-
-    var largestDuplicateGroups: [DuplicateGroup] {
-        duplicateGroups.sorted { $0.potentialSavings > $1.potentialSavings }
-    }
 }
