@@ -17,17 +17,22 @@ struct ContentView: View {
             switch viewModel.appState {
             case .idle:
                 MainView(viewModel: viewModel)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
 
             case .scanning:
                 ScanProgressView(viewModel: viewModel)
+                    .transition(.opacity)
 
             case .results:
                 ResultsView(viewModel: viewModel)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
 
             case .error(let message):
                 ErrorView(message: message, viewModel: viewModel)
+                    .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: viewModel.appState)
         .frame(minWidth: 800, minHeight: 600)
         .sheet(isPresented: $showingHistory) {
             HistoryView()

@@ -22,12 +22,6 @@ struct free_up_my_macApp: App {
                 }
                 .keyboardShortcut("n", modifiers: .command)
             }
-
-            CommandGroup(replacing: .help) {
-                Button("Free Up My Mac Help") {
-                    // Open help documentation when available
-                }
-            }
         }
     }
 }

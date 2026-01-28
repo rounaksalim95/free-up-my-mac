@@ -19,9 +19,11 @@ struct DuplicateGroupView: View {
                 }
             } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .foregroundStyle(.secondary)
                         .frame(width: 16)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .animation(.easeInOut(duration: 0.2), value: isExpanded)
 
                     FileIconView(fileExtension: group.fileExtension)
 
@@ -53,7 +55,7 @@ struct DuplicateGroupView: View {
             }
             .buttonStyle(.plain)
 
-            // File list
+            // File list with transition
             if isExpanded {
                 VStack(spacing: 0) {
                     ForEach(Array(group.files.enumerated()), id: \.element.id) { index, file in
@@ -74,6 +76,7 @@ struct DuplicateGroupView: View {
                     }
                 }
                 .padding(.bottom, 8)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(Color(nsColor: .controlBackgroundColor))

@@ -122,15 +122,15 @@ struct DuplicateDetectorServiceTests {
         var progressPhases: [ScanPhase] = []
         let detector = DuplicateDetectorService()
 
-        let groups = try await detector.findDuplicates(in: files) { progress in
+        let result = try await detector.findDuplicates(in: files) { progress in
             progressPhases.append(progress.phase)
         }
 
-        #expect(groups.count == 1)
-        #expect(groups.first?.files.count == 3)
+        #expect(result.duplicateGroups.count == 1)
+        #expect(result.duplicateGroups.first?.files.count == 3)
 
         // Verify all duplicate files are in the group
-        let groupFileURLs = Set(groups.first?.files.map { $0.url } ?? [])
+        let groupFileURLs = Set(result.duplicateGroups.first?.files.map { $0.url } ?? [])
         for url in duplicateURLs {
             #expect(groupFileURLs.contains(url))
         }
@@ -155,10 +155,10 @@ struct DuplicateDetectorServiceTests {
         ]
 
         let detector = DuplicateDetectorService()
-        let groups = try await detector.findDuplicates(in: files) { _ in }
+        let result = try await detector.findDuplicates(in: files) { _ in }
 
-        #expect(groups.count == 1)
-        #expect(groups.first?.files.count == 2)
+        #expect(result.duplicateGroups.count == 1)
+        #expect(result.duplicateGroups.first?.files.count == 2)
     }
 
     @Test("findDuplicates reports progress through all phases")
@@ -196,9 +196,9 @@ struct DuplicateDetectorServiceTests {
     @Test("findDuplicates handles empty input")
     func testFindDuplicates_HandlesEmptyInput() async throws {
         let detector = DuplicateDetectorService()
-        let groups = try await detector.findDuplicates(in: []) { _ in }
+        let result = try await detector.findDuplicates(in: []) { _ in }
 
-        #expect(groups.isEmpty)
+        #expect(result.duplicateGroups.isEmpty)
     }
 
     @Test("findDuplicates handles no duplicates")
@@ -218,9 +218,9 @@ struct DuplicateDetectorServiceTests {
         ]
 
         let detector = DuplicateDetectorService()
-        let groups = try await detector.findDuplicates(in: files) { _ in }
+        let result = try await detector.findDuplicates(in: files) { _ in }
 
-        #expect(groups.isEmpty)
+        #expect(result.duplicateGroups.isEmpty)
     }
 
     @Test("findDuplicates sorts groups by potential savings descending")
@@ -246,12 +246,12 @@ struct DuplicateDetectorServiceTests {
         ]
 
         let detector = DuplicateDetectorService()
-        let groups = try await detector.findDuplicates(in: files) { _ in }
+        let result = try await detector.findDuplicates(in: files) { _ in }
 
-        #expect(groups.count == 2)
+        #expect(result.duplicateGroups.count == 2)
         // First group should have larger potential savings
-        #expect(groups[0].potentialSavings >= groups[1].potentialSavings)
-        #expect(groups[0].size == 4096)
+        #expect(result.duplicateGroups[0].potentialSavings >= result.duplicateGroups[1].potentialSavings)
+        #expect(result.duplicateGroups[0].size == 4096)
     }
 
     // MARK: - Cancellation Tests
@@ -313,12 +313,12 @@ struct DuplicateDetectorServiceTests {
         ]
 
         let detector = DuplicateDetectorService()
-        let groups = try await detector.findDuplicates(in: files) { _ in }
+        let result = try await detector.findDuplicates(in: files) { _ in }
 
-        #expect(groups.count == 2)
+        #expect(result.duplicateGroups.count == 2)
 
         // Verify both groups are found
-        let sizes = Set(groups.map { $0.size })
+        let sizes = Set(result.duplicateGroups.map { $0.size })
         #expect(sizes.contains(2048))
         #expect(sizes.contains(16384))
     }
@@ -338,11 +338,11 @@ struct DuplicateDetectorServiceTests {
         ]
 
         let detector = DuplicateDetectorService()
-        let groups = try await detector.findDuplicates(in: files) { _ in }
+        let result = try await detector.findDuplicates(in: files) { _ in }
 
-        #expect(groups.count == 1)
+        #expect(result.duplicateGroups.count == 1)
 
-        let group = groups.first!
+        let group = result.duplicateGroups.first!
         #expect(group.size == 2048)
         #expect(group.hash.count == 16) // 16-char hex hash
         #expect(group.files.count == 2)

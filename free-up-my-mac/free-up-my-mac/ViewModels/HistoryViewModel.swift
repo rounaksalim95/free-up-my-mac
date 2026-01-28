@@ -50,26 +50,6 @@ final class HistoryViewModel {
         isLoading = false
     }
 
-    /// Load sessions from history manager
-    func loadSessions() async {
-        do {
-            sessions = try await historyManager.loadSessions()
-        } catch {
-            errorMessage = "Failed to load sessions: \(error.localizedDescription)"
-            sessions = []
-        }
-    }
-
-    /// Load stats from history manager
-    func loadStats() async {
-        do {
-            stats = try await historyManager.loadStats()
-        } catch {
-            errorMessage = "Failed to load stats: \(error.localizedDescription)"
-            stats = SavingsStats.empty
-        }
-    }
-
     /// Refresh all data
     func refresh() async {
         await loadData()

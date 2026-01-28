@@ -9,6 +9,7 @@ struct ResultsView: View {
     @State private var isProcessing = false
     @State private var quickLookFile: ScannedFile?
     @State private var showTrashConfirmation = false
+    @State private var showSkippedFiles = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,7 +18,11 @@ struct ResultsView: View {
                 totalGroups: viewModel.totalDuplicateGroups,
                 totalFiles: viewModel.totalDuplicateFiles,
                 potentialSavings: viewModel.totalPotentialSavings,
-                scannedFolders: viewModel.selectedFolders
+                scannedFolders: viewModel.selectedFolders,
+                skippedFilesCount: viewModel.skippedFiles.count,
+                onShowSkippedFiles: {
+                    showSkippedFiles = true
+                }
             )
 
             Divider()
@@ -84,6 +89,9 @@ struct ResultsView: View {
             if let result = viewModel.lastTrashResult {
                 Text(trashResultMessage(for: result))
             }
+        }
+        .sheet(isPresented: $showSkippedFiles) {
+            SkippedFilesSummaryView(skippedFiles: viewModel.skippedFiles)
         }
     }
 

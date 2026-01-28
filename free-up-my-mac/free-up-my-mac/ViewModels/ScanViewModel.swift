@@ -33,6 +33,7 @@ final class ScanViewModel {
     var duplicateGroups: [DuplicateGroup] = []
     var selectedFileIds: Set<UUID> = []
     var scannedFiles: [ScannedFile] = []
+    var skippedFiles: [SkippedFile] = []
 
     // MARK: - Services
 
@@ -158,6 +159,7 @@ final class ScanViewModel {
         scannedFiles.removeAll()
         duplicateGroups.removeAll()
         selectedFileIds.removeAll()
+        skippedFiles.removeAll()
         appState = .scanning
         scanProgress = ScanProgress(phase: .enumerating, startTime: Date())
 
@@ -168,14 +170,16 @@ final class ScanViewModel {
 
         do {
             var allFiles: [ScannedFile] = []
+            var allSkippedFiles: [SkippedFile] = []
 
             for folder in selectedFolders {
-                let files = try await scannerService.scanDirectory(at: folder) { [weak self] progress in
+                let result = try await scannerService.scanDirectoryWithSkipped(at: folder) { [weak self] progress in
                     Task { @MainActor in
                         self?.scanProgress = progress
                     }
                 }
-                allFiles.append(contentsOf: files)
+                allFiles.append(contentsOf: result.files)
+                allSkippedFiles.append(contentsOf: result.skippedFiles)
             }
 
             scannedFiles = allFiles
@@ -184,13 +188,17 @@ final class ScanViewModel {
             duplicateDetectorService = DuplicateDetectorService()
 
             // Find duplicates using real content-based detection
-            duplicateGroups = try await duplicateDetectorService.findDuplicates(
+            let detectionResult = try await duplicateDetectorService.findDuplicates(
                 in: allFiles
             ) { [weak self] progress in
                 Task { @MainActor in
                     self?.scanProgress = progress
                 }
             }
+
+            // Combine skipped files from scanning and hashing phases
+            skippedFiles = allSkippedFiles + detectionResult.skippedFiles
+            duplicateGroups = detectionResult.duplicateGroups
 
             appState = .results
 
@@ -238,6 +246,7 @@ final class ScanViewModel {
         duplicateGroups.removeAll()
         selectedFileIds.removeAll()
         scannedFiles.removeAll()
+        skippedFiles.removeAll()
         scanProgress = .idle
     }
 
@@ -377,10 +386,12 @@ final class ScanViewModel {
     }
 
     func revealInFinder(_ file: ScannedFile) {
+        guard FileManager.default.fileExists(atPath: file.url.path) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([file.url])
     }
 
     func openFile(_ file: ScannedFile) {
+        guard FileManager.default.fileExists(atPath: file.url.path) else { return }
         NSWorkspace.shared.open(file.url)
     }
 }
