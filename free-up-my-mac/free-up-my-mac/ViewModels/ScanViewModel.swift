@@ -34,7 +34,6 @@ final class ScanViewModel {
     var selectedFileIds: Set<UUID> = []
     var scannedFiles: [ScannedFile] = []
     var skippedFiles: [SkippedFile] = []
-    var showSkippedFilesAlert: Bool = false
 
     // MARK: - Services
 
