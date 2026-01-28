@@ -40,20 +40,20 @@ struct IntegrationTests {
         let detector = DuplicateDetectorService()
         var detectProgressUpdates: [ScanProgress] = []
 
-        let duplicateGroups = try await detector.findDuplicates(in: scannedFiles) { progress in
+        let detectionResult = try await detector.findDuplicates(in: scannedFiles) { progress in
             detectProgressUpdates.append(progress)
         }
 
         // Verify duplicate detection
-        #expect(duplicateGroups.count == 1) // One group of duplicates
-        #expect(duplicateGroups.first?.files.count == 3) // 3 files in the group
+        #expect(detectionResult.duplicateGroups.count == 1) // One group of duplicates
+        #expect(detectionResult.duplicateGroups.first?.files.count == 3) // 3 files in the group
         #expect(detectProgressUpdates.contains { $0.phase == .groupingBySize })
         #expect(detectProgressUpdates.contains { $0.phase == .completed })
 
         // 4. Trash duplicates (keep the original) with FileOperationService
         let fileOps = FileOperationService()
 
-        guard let group = duplicateGroups.first else {
+        guard let group = detectionResult.duplicateGroups.first else {
             Issue.record("No duplicate group found")
             return
         }
@@ -98,9 +98,9 @@ struct IntegrationTests {
         #expect(scannedFiles.count == 3)
 
         let detector = DuplicateDetectorService()
-        let duplicateGroups = try await detector.findDuplicates(in: scannedFiles) { _ in }
+        let detectionResult = try await detector.findDuplicates(in: scannedFiles) { _ in }
 
-        #expect(duplicateGroups.isEmpty)
+        #expect(detectionResult.duplicateGroups.isEmpty)
     }
 
     // MARK: - Same Size Different Content
@@ -122,10 +122,10 @@ struct IntegrationTests {
         #expect(scannedFiles.count == 3)
 
         let detector = DuplicateDetectorService()
-        let duplicateGroups = try await detector.findDuplicates(in: scannedFiles) { _ in }
+        let detectionResult = try await detector.findDuplicates(in: scannedFiles) { _ in }
 
         // Files have same size but different content, so no duplicates
-        #expect(duplicateGroups.isEmpty)
+        #expect(detectionResult.duplicateGroups.isEmpty)
     }
 
     // MARK: - Multiple Duplicate Groups
@@ -160,12 +160,12 @@ struct IntegrationTests {
         #expect(scannedFiles.count == 6)
 
         let detector = DuplicateDetectorService()
-        let duplicateGroups = try await detector.findDuplicates(in: scannedFiles) { _ in }
+        let detectionResult = try await detector.findDuplicates(in: scannedFiles) { _ in }
 
-        #expect(duplicateGroups.count == 2)
+        #expect(detectionResult.duplicateGroups.count == 2)
 
         // Verify group sizes (sorted by potential savings, so larger first)
-        let sortedGroups = duplicateGroups.sorted { $0.files.count > $1.files.count }
+        let sortedGroups = detectionResult.duplicateGroups.sorted { $0.files.count > $1.files.count }
         #expect(sortedGroups[0].files.count == 3) // doc group
         #expect(sortedGroups[1].files.count == 2) // photo group
     }
@@ -197,10 +197,10 @@ struct IntegrationTests {
         #expect(scannedFiles.count == 3)
 
         let detector = DuplicateDetectorService()
-        let duplicateGroups = try await detector.findDuplicates(in: scannedFiles) { _ in }
+        let detectionResult = try await detector.findDuplicates(in: scannedFiles) { _ in }
 
-        #expect(duplicateGroups.count == 1)
-        #expect(duplicateGroups.first?.files.count == 3)
+        #expect(detectionResult.duplicateGroups.count == 1)
+        #expect(detectionResult.duplicateGroups.first?.files.count == 3)
     }
 
     // MARK: - Cancellation During Detection
@@ -258,14 +258,14 @@ struct IntegrationTests {
         let detector = DuplicateDetectorService()
         var phases: [ScanPhase] = []
 
-        let duplicateGroups = try await detector.findDuplicates(in: scannedFiles) { progress in
+        let detectionResult = try await detector.findDuplicates(in: scannedFiles) { progress in
             if !phases.contains(progress.phase) {
                 phases.append(progress.phase)
             }
         }
 
-        #expect(duplicateGroups.count == 1)
-        #expect(duplicateGroups.first?.files.count == 2)
+        #expect(detectionResult.duplicateGroups.count == 1)
+        #expect(detectionResult.duplicateGroups.first?.files.count == 2)
 
         // Verify detection completed
         #expect(phases.contains(.completed))
@@ -289,11 +289,11 @@ struct IntegrationTests {
         let scannedFiles = try await scanner.scanDirectory(at: testDir.url) { _ in }
 
         let detector = DuplicateDetectorService()
-        let duplicateGroups = try await detector.findDuplicates(in: scannedFiles) { _ in }
+        let detectionResult = try await detector.findDuplicates(in: scannedFiles) { _ in }
 
-        #expect(duplicateGroups.count == 1)
+        #expect(detectionResult.duplicateGroups.count == 1)
 
-        let group = duplicateGroups.first!
+        let group = detectionResult.duplicateGroups.first!
         let file1 = group.files[0]
         let file2 = group.files[1]
 

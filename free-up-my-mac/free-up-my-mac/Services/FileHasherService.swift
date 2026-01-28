@@ -16,6 +16,12 @@ actor FileHasherService {
     private let smallFileThreshold: Int64
     private var isCancelled = false
 
+    /// Result of a batch hashing operation
+    struct HashBatchResult: Sendable {
+        let files: [ScannedFile]
+        let skippedFiles: [SkippedFile]
+    }
+
     init(
         partialHashSize: Int = 4096,
         chunkSize: Int = 65536,
@@ -74,8 +80,8 @@ actor FileHasherService {
     func computePartialHashes(
         for files: [ScannedFile],
         progress: @escaping @Sendable (Int, Int) -> Void
-    ) async throws -> [ScannedFile] {
-        if files.isEmpty { return [] }
+    ) async throws -> HashBatchResult {
+        if files.isEmpty { return HashBatchResult(files: [], skippedFiles: []) }
 
         let partialSize = partialHashSize
         let threshold = smallFileThreshold
@@ -95,8 +101,8 @@ actor FileHasherService {
     func computeFullHashes(
         for files: [ScannedFile],
         progress: @escaping @Sendable (Int, Int) -> Void
-    ) async throws -> [ScannedFile] {
-        if files.isEmpty { return [] }
+    ) async throws -> HashBatchResult {
+        if files.isEmpty { return HashBatchResult(files: [], skippedFiles: []) }
 
         let chunk = chunkSize
 
@@ -109,15 +115,22 @@ actor FileHasherService {
 
     // MARK: - Private Helpers
 
+    /// Result of processing a single file in a batch
+    private enum FileProcessResult: Sendable {
+        case success(ScannedFile)
+        case skipped(SkippedFile)
+    }
+
     private func processBatch(
         files: [ScannedFile],
         progress: @escaping @Sendable (Int, Int) -> Void,
         transform: @escaping @Sendable (ScannedFile) throws -> ScannedFile
-    ) async throws -> [ScannedFile] {
+    ) async throws -> HashBatchResult {
         let total = files.count
         var processedCount = 0
-        var results: [ScannedFile] = []
-        results.reserveCapacity(total)
+        var successfulFiles: [ScannedFile] = []
+        var skippedFiles: [SkippedFile] = []
+        successfulFiles.reserveCapacity(total)
 
         // Process in chunks to limit concurrency
         let chunks = stride(from: 0, to: files.count, by: maxConcurrentOperations).map {
@@ -128,30 +141,45 @@ actor FileHasherService {
             try checkCancelled()
 
             // Process chunk concurrently using throwing task group
-            let chunkResults = try await withThrowingTaskGroup(of: ScannedFile?.self) { group in
+            let chunkResults = try await withThrowingTaskGroup(of: FileProcessResult.self) { group in
                 for file in chunk {
                     group.addTask {
                         do {
-                            return try transform(file)
+                            return .success(try transform(file))
                         } catch let error as HashError where error != .cancelled {
-                            // Skip files that fail due to permission/read errors
+                            // Track files that fail due to permission/read errors
                             Self.logger.error("Hashing failed for \(file.url.path): \(String(describing: error))")
-                            return nil
+                            let reason: SkippedFile.SkipReason
+                            switch error {
+                            case .fileNotFound:
+                                reason = .hashingFailed("File not found")
+                            case .readError(_, let message):
+                                reason = .hashingFailed(message)
+                            case .cancelled:
+                                // This case won't be reached due to the where clause, but needed for exhaustiveness
+                                reason = .hashingFailed("Cancelled")
+                            }
+                            return .skipped(SkippedFile(url: file.url, reason: reason))
                         }
                         // HashError.cancelled and other errors propagate up
                     }
                 }
 
-                var chunkFiles: [ScannedFile] = []
+                var results: [FileProcessResult] = []
                 for try await result in group {
-                    if let file = result {
-                        chunkFiles.append(file)
-                    }
+                    results.append(result)
                 }
-                return chunkFiles
+                return results
             }
 
-            results.append(contentsOf: chunkResults)
+            for result in chunkResults {
+                switch result {
+                case .success(let file):
+                    successfulFiles.append(file)
+                case .skipped(let skipped):
+                    skippedFiles.append(skipped)
+                }
+            }
             processedCount += chunk.count
 
             // Report progress
@@ -163,7 +191,7 @@ actor FileHasherService {
             }
         }
 
-        return results
+        return HashBatchResult(files: successfulFiles, skippedFiles: skippedFiles)
     }
 
     // MARK: - Nonisolated Static Helpers (for true parallel execution)

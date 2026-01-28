@@ -184,19 +184,22 @@ final class ScanViewModel {
             }
 
             scannedFiles = allFiles
-            skippedFiles = allSkippedFiles
 
             // Create a new detector service for this scan
             duplicateDetectorService = DuplicateDetectorService()
 
             // Find duplicates using real content-based detection
-            duplicateGroups = try await duplicateDetectorService.findDuplicates(
+            let detectionResult = try await duplicateDetectorService.findDuplicates(
                 in: allFiles
             ) { [weak self] progress in
                 Task { @MainActor in
                     self?.scanProgress = progress
                 }
             }
+
+            // Combine skipped files from scanning and hashing phases
+            skippedFiles = allSkippedFiles + detectionResult.skippedFiles
+            duplicateGroups = detectionResult.duplicateGroups
 
             appState = .results
 

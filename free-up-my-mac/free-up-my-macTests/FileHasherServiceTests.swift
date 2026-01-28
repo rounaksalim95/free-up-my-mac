@@ -160,8 +160,8 @@ struct FileHasherServiceTests {
             progressUpdates.append((processed, total))
         }
 
-        #expect(results.count == 10)
-        #expect(results.allSatisfy { $0.partialHash != nil })
+        #expect(results.files.count == 10)
+        #expect(results.files.allSatisfy { $0.partialHash != nil })
 
         // Should have received at least one progress update
         #expect(!progressUpdates.isEmpty)
@@ -191,8 +191,8 @@ struct FileHasherServiceTests {
             progressUpdates.append((processed, total))
         }
 
-        #expect(results.count == 10)
-        #expect(results.allSatisfy { $0.fullHash != nil })
+        #expect(results.files.count == 10)
+        #expect(results.files.allSatisfy { $0.fullHash != nil })
         #expect(!progressUpdates.isEmpty)
     }
 
@@ -228,9 +228,13 @@ struct FileHasherServiceTests {
         let results = try await hasher.computeFullHashes(for: files) { _, _ in }
 
         // Should return only the accessible file with hash
-        let filesWithHashes = results.filter { $0.fullHash != nil }
+        let filesWithHashes = results.files.filter { $0.fullHash != nil }
         #expect(filesWithHashes.count == 1)
         #expect(filesWithHashes.first?.url == accessibleURL)
+
+        // Inaccessible file should be in skipped files
+        #expect(results.skippedFiles.count == 1)
+        #expect(results.skippedFiles.first?.url == inaccessibleURL)
     }
 
     @Test("computeFullHash throws for non-existent file")
@@ -274,7 +278,7 @@ struct FileHasherServiceTests {
             let results = try await hashTask.value
             // If it completes quickly, that's also acceptable
             // But we should have fewer results than total files if cancelled mid-process
-            #expect(results.count <= files.count)
+            #expect(results.files.count <= files.count)
         } catch let error as HashError {
             #expect(error == .cancelled)
         }
