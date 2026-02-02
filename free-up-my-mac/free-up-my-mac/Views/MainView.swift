@@ -5,63 +5,87 @@ struct MainView: View {
     @Bindable var viewModel: ScanViewModel
 
     var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
-
-            // App title and icon
+        VStack(spacing: 0) {
+            // SECTION 1: Header (fixed)
             VStack(spacing: 16) {
-                Image(systemName: "doc.on.doc.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.blue)
+                // Compact title row
+                HStack(spacing: 12) {
+                    Image(systemName: viewModel.scanMode.iconName)
+                        .font(.system(size: 36))
+                        .foregroundStyle(.blue)
+                        .frame(width: 44, height: 44, alignment: .center)
 
-                Text("Free Up My Mac")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Free Up My Mac")
+                            .font(.title2)
+                            .fontWeight(.bold)
 
-                Text("Find and remove duplicate files to reclaim disk space")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+                        Text(viewModel.scanMode.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 200, alignment: .leading)
+                    }
+                }
+
+                // Mode selector
+                ScanModeSelector(selectedMode: $viewModel.scanMode)
+
+                // Size threshold (always reserve space to prevent layout shift)
+                SizeThresholdInputView(minimumSize: $viewModel.minimumFileSize)
+                    .frame(maxWidth: 500)
+                    .opacity(viewModel.scanMode == .largeFiles ? 1 : 0)
+                    .allowsHitTesting(viewModel.scanMode == .largeFiles)
             }
+            .padding(.horizontal, 32)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
 
-            Spacer()
-
-            // Folder selection area
+            // SECTION 2: Folder selection (flexible, takes remaining space)
             FolderSelectionView(viewModel: viewModel)
                 .frame(maxWidth: 600)
+                .padding(.horizontal, 32)
 
-            Spacer()
+            Spacer(minLength: 16)
 
-            // Start scan button
-            Button {
-                Task {
-                    await viewModel.startScan()
+            // SECTION 3: Footer (fixed, always visible)
+            VStack(spacing: 8) {
+                Button {
+                    Task {
+                        await viewModel.startScan()
+                    }
+                } label: {
+                    Label("Start Scan", systemImage: "magnifyingglass")
+                        .font(.title3)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
                 }
-            } label: {
-                Label("Start Scan", systemImage: "magnifyingglass")
-                    .font(.title3)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!viewModel.canStartScan)
-            .keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!viewModel.canStartScan)
+                .keyboardShortcut(.return, modifiers: .command)
 
-            if viewModel.selectedFolders.isEmpty {
-                Text("Select one or more folders to scan")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if viewModel.selectedFolders.isEmpty {
+                    Text("Select one or more folders to scan")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-
-            Spacer()
+            .padding(.bottom, 24)
         }
-        .padding(32)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.scanMode)
     }
 }
 
-#Preview {
+#Preview("Duplicates Mode") {
     MainView(viewModel: ScanViewModel())
-        .frame(width: 800, height: 600)
+        .frame(width: 800, height: 700)
+}
+
+#Preview("Large Files Mode") {
+    let viewModel = ScanViewModel()
+    viewModel.scanMode = .largeFiles
+    return MainView(viewModel: viewModel)
+        .frame(width: 800, height: 700)
 }
 
 #Preview("With Folders Selected") {
@@ -69,5 +93,5 @@ struct MainView: View {
     viewModel.addFolder(URL(fileURLWithPath: "/Users/test/Documents"))
     viewModel.addFolder(URL(fileURLWithPath: "/Users/test/Downloads"))
     return MainView(viewModel: viewModel)
-        .frame(width: 800, height: 600)
+        .frame(width: 800, height: 700)
 }

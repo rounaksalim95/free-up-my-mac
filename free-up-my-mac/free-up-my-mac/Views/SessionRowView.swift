@@ -16,10 +16,15 @@ struct SessionRowView: View {
 
             // Session info
             VStack(alignment: .leading, spacing: 4) {
-                Text(session.scannedDirectory)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                HStack(spacing: 8) {
+                    Text(session.scannedDirectory)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    // Cleanup type badge
+                    CleanupTypeBadge(type: session.cleanupType)
+                }
 
                 HStack(spacing: 12) {
                     Label("\(session.filesDeleted) files", systemImage: "doc.on.doc")
@@ -75,6 +80,39 @@ struct SessionRowView: View {
     }
 }
 
+/// Badge showing the cleanup type
+struct CleanupTypeBadge: View {
+    let type: CleanupType
+
+    var body: some View {
+        Label(type.displayName, systemImage: type.iconName)
+            .font(.caption2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(backgroundColor)
+            .foregroundStyle(foregroundColor)
+            .clipShape(Capsule())
+    }
+
+    private var backgroundColor: Color {
+        switch type {
+        case .duplicates:
+            return Color.blue.opacity(0.2)
+        case .largeFiles:
+            return Color.orange.opacity(0.2)
+        }
+    }
+
+    private var foregroundColor: Color {
+        switch type {
+        case .duplicates:
+            return .blue
+        case .largeFiles:
+            return .orange
+        }
+    }
+}
+
 #Preview {
     VStack(spacing: 8) {
         SessionRowView(
@@ -83,7 +121,8 @@ struct SessionRowView: View {
                 scannedDirectory: "/Users/test/Documents",
                 filesDeleted: 23,
                 bytesRecovered: 1024 * 1024 * 150,
-                duplicateGroupsCleaned: 8
+                duplicateGroupsCleaned: 8,
+                cleanupType: .duplicates
             ),
             onDelete: {}
         )
@@ -93,6 +132,18 @@ struct SessionRowView: View {
                 date: Date().addingTimeInterval(-86400 * 2),
                 scannedDirectory: "/Users/test/Downloads/Very Long Directory Name That Should Truncate",
                 filesDeleted: 5,
+                bytesRecovered: 1024 * 1024 * 250,
+                duplicateGroupsCleaned: 0,
+                cleanupType: .largeFiles
+            ),
+            onDelete: {}
+        )
+
+        SessionRowView(
+            session: CleanupSession(
+                date: Date().addingTimeInterval(-86400 * 5),
+                scannedDirectory: "/Users/test/Pictures",
+                filesDeleted: 3,
                 bytesRecovered: 1024 * 1024 * 25,
                 duplicateGroupsCleaned: 2,
                 errors: ["Some error occurred"]
@@ -100,6 +151,6 @@ struct SessionRowView: View {
             onDelete: {}
         )
     }
-    .frame(width: 500)
+    .frame(width: 600)
     .padding()
 }

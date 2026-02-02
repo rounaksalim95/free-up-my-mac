@@ -35,12 +35,24 @@ final class ScanViewModel {
     var scannedFiles: [ScannedFile] = []
     var skippedFiles: [SkippedFile] = []
 
+    // MARK: - Scan Mode State
+
+    var scanMode: ScanMode = .duplicates
+    var minimumFileSize: Int64 = 100 * 1024 * 1024  // Default 100MB
+    var largeFileGroups: [LargeFileGroup] = []
+
+    // MARK: - Disk Space State
+
+    var diskUsage: DiskSpaceService.DiskUsage?
+
     // MARK: - Services
 
     private var scannerService: FileScannerService
     private var duplicateDetectorService: DuplicateDetectorService
+    private var largeFileDetectorService: LargeFileDetectorService
     private var fileOperationService: FileOperationService
     private let historyManager: HistoryManager
+    private let diskSpaceService: DiskSpaceService
     private var scanTask: Task<Void, Never>?
 
     // MARK: - Trash Operation State
@@ -53,13 +65,17 @@ final class ScanViewModel {
     init(
         scannerService: FileScannerService = FileScannerService(),
         duplicateDetectorService: DuplicateDetectorService = DuplicateDetectorService(),
+        largeFileDetectorService: LargeFileDetectorService = LargeFileDetectorService(),
         fileOperationService: FileOperationService = FileOperationService(),
-        historyManager: HistoryManager = HistoryManager()
+        historyManager: HistoryManager = HistoryManager(),
+        diskSpaceService: DiskSpaceService = DiskSpaceService()
     ) {
         self.scannerService = scannerService
         self.duplicateDetectorService = duplicateDetectorService
+        self.largeFileDetectorService = largeFileDetectorService
         self.fileOperationService = fileOperationService
         self.historyManager = historyManager
+        self.diskSpaceService = diskSpaceService
     }
 
     // MARK: - Computed Properties
@@ -108,6 +124,51 @@ final class ScanViewModel {
         duplicateGroups.count
     }
 
+    // MARK: - Large Files Computed Properties
+
+    var totalLargeFiles: Int {
+        largeFileGroups.reduce(0) { $0 + $1.fileCount }
+    }
+
+    var totalLargeFilesSize: Int64 {
+        largeFileGroups.reduce(0) { $0 + $1.totalSize }
+    }
+
+    var totalLargeFileFolders: Int {
+        largeFileGroups.count
+    }
+
+    /// Returns the total size of unique URLs in the selection for large files
+    var selectedLargeFilesSavings: Int64 {
+        selectedLargeFilesDeduplicatedByURL.reduce(0) { $0 + $1.size }
+    }
+
+    /// Returns the count of unique URLs in the selection for large files
+    var selectedLargeFilesCount: Int {
+        selectedLargeFilesDeduplicatedByURL.count
+    }
+
+    /// Helper to get selected large files de-duplicated by URL
+    private var selectedLargeFilesDeduplicatedByURL: [ScannedFile] {
+        var seenURLs = Set<URL>()
+        var uniqueFiles: [ScannedFile] = []
+        for group in largeFileGroups {
+            for file in group.files where selectedFileIds.contains(file.id) {
+                if !seenURLs.contains(file.url) {
+                    seenURLs.insert(file.url)
+                    uniqueFiles.append(file)
+                }
+            }
+        }
+        return uniqueFiles
+    }
+
+    /// Date range for combined score calculation
+    var largeFilesDateRange: (oldest: Date, newest: Date)? {
+        let allFiles = largeFileGroups.flatMap { $0.files }
+        return LargeFileDetectorService.calculateDateRange(from: allFiles)
+    }
+
     // MARK: - Folder Selection
 
     func addFolder(_ url: URL) {
@@ -146,6 +207,15 @@ final class ScanViewModel {
         }
     }
 
+    func selectAllLargeFiles() {
+        // Select all large files
+        for group in largeFileGroups {
+            for file in group.files {
+                selectedFileIds.insert(file.id)
+            }
+        }
+    }
+
     func deselectAll() {
         selectedFileIds.removeAll()
     }
@@ -155,17 +225,25 @@ final class ScanViewModel {
     func startScan() async {
         guard canStartScan else { return }
 
+        switch scanMode {
+        case .duplicates:
+            await startDuplicatesScan()
+        case .largeFiles:
+            await startLargeFilesScan()
+        }
+    }
+
+    private func startDuplicatesScan() async {
         // Clear previous results
         scannedFiles.removeAll()
         duplicateGroups.removeAll()
+        largeFileGroups.removeAll()
         selectedFileIds.removeAll()
         skippedFiles.removeAll()
         appState = .scanning
         scanProgress = ScanProgress(phase: .enumerating, startTime: Date())
 
         // Create new services for this scan to ensure fresh cancellation state.
-        // Note: This replaces any services injected at init, which is intentional for production use.
-        // For testing, consider testing the services directly rather than through the ViewModel.
         scannerService = FileScannerService()
 
         do {
@@ -203,32 +281,93 @@ final class ScanViewModel {
             appState = .results
 
         } catch let error as ScanError {
-            switch error {
-            case .cancelled:
-                appState = .idle
-                scanProgress = ScanProgress(phase: .cancelled)
-            case .directoryNotFound(let url):
-                appState = .error("Directory not found: \(url.path)")
-                scanProgress = ScanProgress(phase: .failed, error: "Directory not found")
-            case .accessDenied(let url):
-                appState = .error("Access denied: \(url.path)")
-                scanProgress = ScanProgress(phase: .failed, error: "Access denied")
-            }
+            handleScanError(error)
         } catch let error as HashError {
-            switch error {
-            case .cancelled:
-                appState = .idle
-                scanProgress = ScanProgress(phase: .cancelled)
-            case .fileNotFound(let url):
-                appState = .error("File not found: \(url.path)")
-                scanProgress = ScanProgress(phase: .failed, error: "File not found")
-            case .readError(let url, let message):
-                appState = .error("Error reading \(url.lastPathComponent): \(message)")
-                scanProgress = ScanProgress(phase: .failed, error: "Read error")
-            }
+            handleHashError(error)
         } catch {
             appState = .error(error.localizedDescription)
             scanProgress = ScanProgress(phase: .failed, error: error.localizedDescription)
+        }
+    }
+
+    private func startLargeFilesScan() async {
+        // Clear previous results
+        scannedFiles.removeAll()
+        duplicateGroups.removeAll()
+        largeFileGroups.removeAll()
+        selectedFileIds.removeAll()
+        skippedFiles.removeAll()
+        appState = .scanning
+        scanProgress = ScanProgress(phase: .enumerating, startTime: Date())
+
+        // Create new services for this scan to ensure fresh cancellation state.
+        scannerService = FileScannerService()
+        largeFileDetectorService = LargeFileDetectorService()
+
+        do {
+            var allFiles: [ScannedFile] = []
+            var allSkippedFiles: [SkippedFile] = []
+
+            for folder in selectedFolders {
+                let result = try await scannerService.scanDirectoryWithSkipped(at: folder) { [weak self] progress in
+                    Task { @MainActor in
+                        self?.scanProgress = progress
+                    }
+                }
+                allFiles.append(contentsOf: result.files)
+                allSkippedFiles.append(contentsOf: result.skippedFiles)
+            }
+
+            scannedFiles = allFiles
+            skippedFiles = allSkippedFiles
+
+            // Find large files and group by folder
+            let detectionResult = try await largeFileDetectorService.findLargeFiles(
+                in: allFiles,
+                minimumSize: minimumFileSize
+            ) { [weak self] progress in
+                Task { @MainActor in
+                    self?.scanProgress = progress
+                }
+            }
+
+            largeFileGroups = detectionResult.largeFileGroups
+
+            appState = .results
+
+        } catch let error as ScanError {
+            handleScanError(error)
+        } catch {
+            appState = .error(error.localizedDescription)
+            scanProgress = ScanProgress(phase: .failed, error: error.localizedDescription)
+        }
+    }
+
+    private func handleScanError(_ error: ScanError) {
+        switch error {
+        case .cancelled:
+            appState = .idle
+            scanProgress = ScanProgress(phase: .cancelled)
+        case .directoryNotFound(let url):
+            appState = .error("Directory not found: \(url.path)")
+            scanProgress = ScanProgress(phase: .failed, error: "Directory not found")
+        case .accessDenied(let url):
+            appState = .error("Access denied: \(url.path)")
+            scanProgress = ScanProgress(phase: .failed, error: "Access denied")
+        }
+    }
+
+    private func handleHashError(_ error: HashError) {
+        switch error {
+        case .cancelled:
+            appState = .idle
+            scanProgress = ScanProgress(phase: .cancelled)
+        case .fileNotFound(let url):
+            appState = .error("File not found: \(url.path)")
+            scanProgress = ScanProgress(phase: .failed, error: "File not found")
+        case .readError(let url, let message):
+            appState = .error("Error reading \(url.lastPathComponent): \(message)")
+            scanProgress = ScanProgress(phase: .failed, error: "Read error")
         }
     }
 
@@ -236,6 +375,7 @@ final class ScanViewModel {
         Task {
             await scannerService.cancelScan()
             await duplicateDetectorService.cancel()
+            await largeFileDetectorService.cancel()
         }
         appState = .idle
         scanProgress = ScanProgress(phase: .cancelled)
@@ -244,6 +384,7 @@ final class ScanViewModel {
     func resetToIdle() {
         appState = .idle
         duplicateGroups.removeAll()
+        largeFileGroups.removeAll()
         selectedFileIds.removeAll()
         scannedFiles.removeAll()
         skippedFiles.removeAll()
@@ -262,11 +403,25 @@ final class ScanViewModel {
         // (same file path could appear multiple times if user scanned overlapping folders)
         var seenURLs = Set<URL>()
         var filesToTrash: [ScannedFile] = []
-        for group in duplicateGroups {
-            for file in group.files where selectedFileIds.contains(file.id) {
-                if !seenURLs.contains(file.url) {
-                    seenURLs.insert(file.url)
-                    filesToTrash.append(file)
+
+        // Get files from the appropriate source based on scan mode
+        switch scanMode {
+        case .duplicates:
+            for group in duplicateGroups {
+                for file in group.files where selectedFileIds.contains(file.id) {
+                    if !seenURLs.contains(file.url) {
+                        seenURLs.insert(file.url)
+                        filesToTrash.append(file)
+                    }
+                }
+            }
+        case .largeFiles:
+            for group in largeFileGroups {
+                for file in group.files where selectedFileIds.contains(file.id) {
+                    if !seenURLs.contains(file.url) {
+                        seenURLs.insert(file.url)
+                        filesToTrash.append(file)
+                    }
                 }
             }
         }
@@ -323,12 +478,20 @@ final class ScanViewModel {
         let failedURLs = Set(failedFiles.map { $0.url })
         let trashedURLs = Set(filesToTrash.filter { !failedURLs.contains($0.url) }.map { $0.url })
 
-        for i in duplicateGroups.indices {
-            duplicateGroups[i].files.removeAll { trashedURLs.contains($0.url) }
+        switch scanMode {
+        case .duplicates:
+            for i in duplicateGroups.indices {
+                duplicateGroups[i].files.removeAll { trashedURLs.contains($0.url) }
+            }
+            // Remove groups with fewer than 2 files (no longer duplicates)
+            duplicateGroups.removeAll { $0.files.count < 2 }
+        case .largeFiles:
+            for i in largeFileGroups.indices {
+                largeFileGroups[i].files.removeAll { trashedURLs.contains($0.url) }
+            }
+            // Remove empty groups
+            largeFileGroups.removeAll { $0.files.isEmpty }
         }
-
-        // Remove groups with fewer than 2 files (no longer duplicates)
-        duplicateGroups.removeAll { $0.files.count < 2 }
 
         // Clear selection
         selectedFileIds.removeAll()
@@ -352,12 +515,14 @@ final class ScanViewModel {
 
     /// Record a cleanup session to history
     private func recordCleanupSession(result: TrashResult) async {
+        let cleanupType: CleanupType = scanMode == .duplicates ? .duplicates : .largeFiles
         let session = CleanupSession(
             scannedDirectories: selectedFolders.map { $0.path },
             filesDeleted: result.trashedCount,
             bytesRecovered: result.bytesFreed,
-            duplicateGroupsCleaned: 0, // Could track affected groups if needed
-            errors: result.failedFiles.map { $0.reason.localizedDescription }
+            duplicateGroupsCleaned: scanMode == .duplicates ? 0 : 0, // Could track affected groups if needed
+            errors: result.failedFiles.map { $0.reason.localizedDescription },
+            cleanupType: cleanupType
         )
 
         do {
@@ -393,5 +558,16 @@ final class ScanViewModel {
     func openFile(_ file: ScannedFile) {
         guard FileManager.default.fileExists(atPath: file.url.path) else { return }
         NSWorkspace.shared.open(file.url)
+    }
+
+    // MARK: - Disk Space
+
+    /// Refresh disk usage information
+    func refreshDiskUsage() async {
+        do {
+            diskUsage = try await diskSpaceService.getDiskUsage()
+        } catch {
+            print("Failed to get disk usage: \(error)")
+        }
     }
 }

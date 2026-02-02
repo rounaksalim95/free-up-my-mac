@@ -13,23 +13,31 @@ struct ContentView: View {
     @State private var showingHistory = false
 
     var body: some View {
-        Group {
-            switch viewModel.appState {
-            case .idle:
-                MainView(viewModel: viewModel)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        VStack(spacing: 0) {
+            // Disk space indicator at the top
+            DiskSpaceIndicatorView(diskUsage: viewModel.diskUsage)
 
-            case .scanning:
-                ScanProgressView(viewModel: viewModel)
-                    .transition(.opacity)
+            Divider()
 
-            case .results:
-                ResultsView(viewModel: viewModel)
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+            // Main content
+            Group {
+                switch viewModel.appState {
+                case .idle:
+                    MainView(viewModel: viewModel)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
 
-            case .error(let message):
-                ErrorView(message: message, viewModel: viewModel)
-                    .transition(.opacity)
+                case .scanning:
+                    ScanProgressView(viewModel: viewModel)
+                        .transition(.opacity)
+
+                case .results:
+                    resultsView
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
+
+                case .error(let message):
+                    ErrorView(message: message, viewModel: viewModel)
+                        .transition(.opacity)
+                }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: viewModel.appState)
@@ -46,6 +54,19 @@ struct ContentView: View {
                 }
                 .help("View cleanup history")
             }
+        }
+        .task {
+            await viewModel.refreshDiskUsage()
+        }
+    }
+
+    @ViewBuilder
+    private var resultsView: some View {
+        switch viewModel.scanMode {
+        case .duplicates:
+            ResultsView(viewModel: viewModel)
+        case .largeFiles:
+            LargeFilesResultsView(viewModel: viewModel)
         }
     }
 }

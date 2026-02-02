@@ -1,8 +1,10 @@
-# Free Up My Mac - Duplicate File Finder
+# Free Up My Mac - Disk Cleanup Utility
 
 ## Overview
 
-A native macOS application that helps users find and remove duplicate files to free up storage space. The app identifies duplicates based on file content (not metadata), ensuring that identical files saved at different times or with different names are detected.
+A native macOS application that helps users free up storage space through two scan modes:
+1. **Duplicate Detection**: Find and remove duplicate files based on content (not metadata), ensuring that identical files saved at different times or with different names are detected.
+2. **Large File Detection**: Find large files taking up disk space, with configurable size thresholds and grouping by file type.
 
 ## Project Status
 
@@ -13,6 +15,7 @@ A native macOS application that helps users find and remove duplicate files to f
 - [x] Phase 5: File Management & Deletion ✅
 - [x] Phase 6: History & Sharing Features ✅
 - [x] Phase 7: Polish & Testing ✅
+- [x] Phase 8: Large File Scanner & UI Improvements ✅
 
 ## Development Approach
 
@@ -38,44 +41,60 @@ This project follows **Test-Driven Development (TDD)**:
 
 ### Core Features
 
-1. **Directory Selection**
+1. **Scan Mode Selection**
+   - Switch between Duplicates mode and Large Files mode
+   - Each mode has distinct icon and description
+   - Smooth animated transitions between modes
+
+2. **Disk Space Indicator**
+   - Display current disk usage at top of window
+   - Color-coded progress bar (green/yellow/red based on usage level)
+   - Show used space, total space, and free space
+
+3. **Directory Selection**
    - Allow users to select specific directories to scan
    - Support scanning entire user home directory
    - Support drag-and-drop of folders into the app
    - Remember recently scanned directories
 
-2. **Duplicate Detection**
+4. **Duplicate Detection**
    - Content-based comparison (ignore metadata like creation date, modification date)
    - Detect identical files regardless of filename
    - Group duplicates together showing all copies
 
-3. **Results Display**
+5. **Large File Detection**
+   - Find files exceeding a configurable size threshold (default: 100 MB)
+   - Group large files by type (Videos, Images, Documents, Archives, Applications, Other)
+   - Sort by size, name, or date
+   - Filter by file type groups
+
+6. **Results Display**
    - Group duplicates by content (all copies shown together)
    - Sort/filter groups by potential space savings
    - Show file paths, sizes, and modification dates
    - Display total potential storage savings
    - Display per-group storage savings
 
-4. **File Preview**
+7. **File Preview**
    - Integrate macOS Quick Look for file preview
    - Support previewing images, PDFs, documents, videos, etc.
    - Press Space or click preview button to view file
 
-5. **File Deletion**
+8. **File Deletion**
    - Select individual duplicate groups for deletion
    - Select all duplicates at once
    - Smart selection: automatically keep one copy, select others for deletion
    - Move files to Trash (recoverable)
    - Show confirmation before deletion
 
-6. **Progress Indication**
+9. **Progress Indication**
    - Detailed progress bar during scan
    - Show current folder being scanned
    - Show number of files scanned
    - Show elapsed time
    - Allow cancellation of scan
 
-7. **Savings History & Sharing**
+10. **Savings History & Sharing**
    - Track history of all cleanup sessions
    - Record date, files deleted, and space freed for each session
    - Show cumulative total space saved across all sessions
@@ -505,11 +524,16 @@ func generateShareImage(stats: SavingsStats) -> NSImage {
 │  │ - enumerate    │  │ - partialHash  │  │ - moveToTrash│  │
 │  │ - filter       │  │ - fullHash     │  │ - getMetadata│  │
 │  └────────────────┘  └────────────────┘  └──────────────┘  │
-│  ┌────────────────┐  ┌────────────────┐                    │
-│  │HistoryManager  │  │ ShareService   │                    │
-│  │ - persist      │  │ - generateCard │                    │
-│  │ - load/save    │  │ - shareSheet   │                    │
-│  └────────────────┘  └────────────────┘                    │
+│  ┌────────────────┐  ┌────────────────┐  ┌──────────────┐  │
+│  │HistoryManager  │  │ ShareService   │  │DiskSpaceSvc  │  │
+│  │ - persist      │  │ - generateCard │  │ - getUsage   │  │
+│  │ - load/save    │  │ - shareSheet   │  │ - usageLevel │  │
+│  └────────────────┘  └────────────────┘  └──────────────┘  │
+│  ┌────────────────┐                                        │
+│  │LargeFileDetect │                                        │
+│  │ - findLarge    │                                        │
+│  │ - groupByType  │                                        │
+│  └────────────────┘                                        │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -535,7 +559,13 @@ FreeUpMyMac/
 │   ├── DuplicateGroupView.swift      # Single group of duplicates
 │   ├── FileRowView.swift             # Individual file row
 │   ├── HistoryView.swift             # Savings history timeline
-│   └── ShareCardView.swift           # Shareable achievement card
+│   ├── ShareCardView.swift           # Shareable achievement card
+│   ├── DiskSpaceIndicatorView.swift  # Disk usage display with progress bar
+│   ├── ScanModeSelector.swift        # Duplicates/Large Files mode toggle
+│   ├── SizeThresholdInputView.swift  # Large file size threshold input
+│   ├── LargeFilesResultsView.swift   # Large file scan results display
+│   ├── LargeFileGroupView.swift      # Single file type group in results
+│   └── LargeFileSortFilterBar.swift  # Sort/filter controls for large files
 ├── ViewModels/
 │   ├── ScanViewModel.swift           # Scan state management
 │   └── HistoryViewModel.swift        # History & sharing logic
@@ -545,12 +575,17 @@ FreeUpMyMac/
 │   ├── FileHasherService.swift       # xxHash implementation
 │   ├── FileOperationService.swift    # Delete/trash operations
 │   ├── HistoryManager.swift          # Persist cleanup history
-│   └── ShareService.swift            # Generate & share content
+│   ├── ShareService.swift            # Generate & share content
+│   ├── DiskSpaceService.swift        # System disk usage queries
+│   └── LargeFileDetectorService.swift # Large file detection and grouping
 ├── Models/
 │   ├── ScannedFile.swift
 │   ├── DuplicateGroup.swift
 │   ├── ScanResult.swift
-│   └── CleanupSession.swift
+│   ├── CleanupSession.swift
+│   ├── ScanMode.swift                # Enum for scan mode selection
+│   ├── LargeFileGroup.swift          # Group of large files by type
+│   └── LargeFileSortOption.swift     # Sort options for large file results
 ├── Utilities/
 │   ├── FileFilters.swift             # Exclusion rules
 │   └── ByteFormatter.swift           # Size formatting
@@ -691,6 +726,15 @@ These features are not in scope for the initial release but could be added later
 - UI polish and animations
 - Testing with various file types and sizes
 - Create DMG for distribution
+
+### Phase 8: Large File Scanner & UI Improvements
+- Add scan mode selector (Duplicates vs Large Files)
+- Implement large file detection service with configurable size threshold
+- Add disk space indicator with color-coded usage levels
+- Group large files by type (Videos, Images, Documents, etc.)
+- Add sort and filter options for large file results
+- Restructure MainView layout for better responsiveness at small window sizes
+- Fix UI stability when switching scan modes
 
 ---
 
