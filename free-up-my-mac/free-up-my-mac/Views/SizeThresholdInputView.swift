@@ -4,12 +4,12 @@ import SwiftUI
 struct SizeThresholdInputView: View {
     @Binding var minimumSize: Int64
 
-    /// Preset size options in bytes
+    /// Preset size options in bytes (using decimal/SI units to match macOS display)
     private let presets: [(label: String, bytes: Int64)] = [
-        ("100 MB", 100 * 1024 * 1024),
-        ("500 MB", 500 * 1024 * 1024),
-        ("1 GB", 1024 * 1024 * 1024),
-        ("5 GB", 5 * 1024 * 1024 * 1024)
+        ("100 MB", 100 * 1_000_000),
+        ("500 MB", 500 * 1_000_000),
+        ("1 GB", 1_000_000_000),
+        ("5 GB", 5 * 1_000_000_000)
     ]
 
     @State private var customSizeText: String = ""
@@ -20,10 +20,11 @@ struct SizeThresholdInputView: View {
         case MB = "MB"
         case GB = "GB"
 
+        /// Multiplier using decimal/SI units (base 1000) to match macOS display
         var multiplier: Int64 {
             switch self {
-            case .MB: return 1024 * 1024
-            case .GB: return 1024 * 1024 * 1024
+            case .MB: return 1_000_000
+            case .GB: return 1_000_000_000
             }
         }
     }
@@ -100,14 +101,14 @@ struct SizeThresholdInputView: View {
     }
 
     private func updateCustomInputFromMinimumSize() {
-        // Try to express in GB first if it's a whole number
-        let gbValue = minimumSize / (1024 * 1024 * 1024)
-        if gbValue > 0 && minimumSize == gbValue * 1024 * 1024 * 1024 {
+        // Try to express in GB first if it's a whole number (using decimal units)
+        let gbValue = minimumSize / 1_000_000_000
+        if gbValue > 0 && minimumSize == gbValue * 1_000_000_000 {
             customSizeText = "\(gbValue)"
             customSizeUnit = .GB
         } else {
-            // Express in MB
-            let mbValue = minimumSize / (1024 * 1024)
+            // Express in MB (using decimal units)
+            let mbValue = minimumSize / 1_000_000
             customSizeText = "\(mbValue)"
             customSizeUnit = .MB
         }

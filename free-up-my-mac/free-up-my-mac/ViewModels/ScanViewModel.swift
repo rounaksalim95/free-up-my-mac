@@ -38,7 +38,7 @@ final class ScanViewModel {
     // MARK: - Scan Mode State
 
     var scanMode: ScanMode = .duplicates
-    var minimumFileSize: Int64 = 100 * 1024 * 1024  // Default 100MB
+    var minimumFileSize: Int64 = 100 * 1_000_000  // Default 100MB (decimal units to match macOS)
     var largeFileGroups: [LargeFileGroup] = []
 
     // MARK: - Disk Space State
